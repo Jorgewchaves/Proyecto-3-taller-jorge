@@ -1,0 +1,11 @@
+{
+    "nivel": "intermedio",
+    "reloj": "timer",
+    "top_x": 2,
+    "elementos": "letras",
+    "tiempo_inicial": {
+        "horas": 0,
+        "minutos": 0,
+        "segundos": 5
+    }
+}
