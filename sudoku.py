@@ -5,6 +5,11 @@ import os
 import random
 from datetime import datetime
 import webbrowser
+import hashlib
+import smtplib
+from email.mime.text import MIMEText
+from email.mime.multipart import MIMEMultipart
+import re
 
 #intentar importar reportlab
 try:
@@ -19,6 +24,17 @@ except ImportError:
     REPORTLAB_DISPONIBLE = False
     print("ADVERTENCIA: reportlab no está instalado. Instálelo con: pip install reportlab")
 
+#====================CONFIGURACION DE CORREO====================
+#CONFIGURACION PARA ENVIAR CORREOS (DEBES CONFIGURAR CON TUS DATOS)
+CONFIG_CORREO = {
+    "servidor": "smtp.gmail.com",
+    "puerto": 587,
+    "usuario": "tu_correo@gmail.com",  #CAMBIAR
+    "contraseña": "tu_contraseña_app"  #CAMBIAR (usar contraseña de aplicación)
+}
+
+#====================FUNCIONES DE USUARIOS====================
+
 #E:ninguna
 #S:str - Ruta absoluta de la carpeta donde se encuentra este script
 #Funcion:Obtiene el directorio donde está guardado el archivo .py actual
@@ -26,197 +42,527 @@ def obtener_directorio_script():
     return os.path.dirname(os.path.abspath(__file__))
 
 #E:ninguna
+#S:list - Lista de usuarios del archivo usuarios.json
+#Funcion:Carga el archivo de usuarios o crea uno vacío si no existe
+def cargar_usuarios():
+    directorio = obtener_directorio_script()
+    archivo = os.path.join(directorio, "usuarios.json")
+    
+    if not os.path.exists(archivo):
+        with open(archivo, "w") as f:
+            json.dump([], f)
+        return []
+    
+    with open(archivo, "r") as f:
+        return json.load(f)
+
+#E:list usuarios - Lista de usuarios a guardar
 #S:None
-#Funcion:Abre el manual de usuario en formato PDF
-def abrir_manual_usuario():
-    directorio_script = obtener_directorio_script()
-    nombre_manual = os.path.join(directorio_script, "manual_de_usuario_sudoku.pdf")
+#Funcion:Guarda la lista de usuarios en el archivo usuarios.json
+def guardar_usuarios(usuarios):
+    directorio = obtener_directorio_script()
+    archivo = os.path.join(directorio, "usuarios.json")
     
-    if os.path.exists(nombre_manual):
-        webbrowser.open(nombre_manual)
-    else:
-        messagebox.showerror("Error", f"No se encuentra el archivo del manual de usuario.\n\nSe esperaba en: {nombre_manual}")
+    with open(archivo, "w") as f:
+        json.dump(usuarios, f, indent=4)
+
+#E:str correo - Correo electrónico a validar
+#S:bool - True si el correo tiene formato válido, False en caso contrario
+#Funcion:Valida que el correo tenga formato correcto usando expresión regular
+def validar_correo(correo):
+    patron = r'^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$'
+    return re.match(patron, correo) is not None
+
+#E:str nombre - Nombre de usuario a validar
+#S:bool - True si el nombre es válido, False en caso contrario
+#Funcion:Valida que el nombre tenga entre 1 y 30 caracteres y solo letras,números,espacios y guiones bajos
+def validar_nombre(nombre):
+    if len(nombre) < 1 or len(nombre) > 30:
+        return False
+    patron = r'^[a-zA-ZáéíóúñÁÉÍÓÚÑ\s0-9_]+$'
+    return re.match(patron, nombre) is not None
 
 #E:ninguna
-#S:bool - True si el archivo fue creado o recreado
-#Funcion:Crea o recrea el archivo sudoku2026partidas.json con la estructura correcta
-def crear_archivo_partidas_si_no_existe():
-    directorio_script = obtener_directorio_script()
-    nombre_archivo = os.path.join(directorio_script, "sudoku2026partidas.json")
+#S:str - Código de 6 dígitos como string
+#Funcion:Genera un código de 6 dígitos aleatorio
+def generar_codigo_ingreso():
+    return f"{random.randint(0, 999999):06d}"
+
+#E:str codigo - Código a hashear
+#S:str - Hash SHA256 del código
+#Funcion:Hashea el código usando SHA256 para almacenamiento seguro
+def hashear_codigo(codigo):
+    return hashlib.sha256(codigo.encode()).hexdigest()
+
+#E:str destino - Correo electrónico del destinatario
+#E:str codigo - Código de 6 dígitos a enviar
+#S:bool - True si el correo se envió correctamente, False en caso contrario
+#Funcion:Envía el código de ingreso por correo electrónico usando SMTP
+def enviar_codigo_por_correo(destino, codigo):
+    try:
+        mensaje = MIMEMultipart()
+        mensaje["From"] = CONFIG_CORREO["usuario"]
+        mensaje["To"] = destino
+        mensaje["Subject"] = "Código de ingreso - Sudoku 2026"
+        
+        cuerpo = f"""
+        Hola,
+        
+        Tu código de ingreso a Sudoku 2026 es: {codigo}
+        
+        Este código es válido solo para esta sesión.
+        
+        ¡Disfruta del juego!
+        """
+        
+        mensaje.attach(MIMEText(cuerpo, "plain"))
+        
+        servidor = smtplib.SMTP(CONFIG_CORREO["servidor"], CONFIG_CORREO["puerto"])
+        servidor.starttls()
+        servidor.login(CONFIG_CORREO["usuario"], CONFIG_CORREO["contraseña"])
+        servidor.send_message(mensaje)
+        servidor.quit()
+        
+        return True
+    except Exception as e:
+        print(f"Error al enviar correo: {e}")
+        return False
+
+#E:list usuarios - Lista de usuarios existentes
+#S:int - Siguiente ID disponible
+#Funcion:Obtiene el siguiente ID disponible incrementando el máximo actual en 1
+def obtener_siguiente_id(usuarios):
+    if not usuarios:
+        return 1
+    return max(u["id"] for u in usuarios) + 1
+
+#E:list usuarios - Lista de usuarios existentes
+#E:str correo - Correo a verificar
+#S:bool - True si el correo ya existe, False en caso contrario
+#Funcion:Verifica si un correo ya está registrado en la lista de usuarios
+def usuario_existe_por_correo(usuarios, correo):
+    return any(u["correo"].lower() == correo.lower() for u in usuarios)
+
+#E:list usuarios - Lista de usuarios existentes
+#E:str nombre - Nombre a verificar
+#S:bool - True si el nombre ya existe, False en caso contrario
+#Funcion:Verifica si un nombre ya está registrado en la lista de usuarios
+def usuario_existe_por_nombre(usuarios, nombre):
+    return any(u["nombre"].lower() == nombre.lower() for u in usuarios)
+
+#E:str correo - Correo del nuevo usuario
+#E:str nombre - Nombre del nuevo usuario
+#E:str codigo - Código de ingreso inicial
+#S:tuple - (dict usuario_creado o None, str mensaje)
+#Funcion:Crea un nuevo usuario validando que correo y nombre no existan
+def crear_usuario(correo, nombre, codigo):
+    usuarios = cargar_usuarios()
     
-    #Partida de prueba FACIL (sin las celdas 1,8 y 8,7)
-    partida_prueba_facil = {
-        "0,0": 5, "0,1": 3, "0,2": 4, "0,3": 6, "0,4": 7, "0,5": 8, "0,6": 9, "0,7": 1, "0,8": 2,
-        "1,0": 6, "1,1": 7, "1,2": 2, "1,3": 1, "1,4": 9, "1,5": 5, "1,6": 3, "1,7": 4,
-        "2,0": 1, "2,1": 9, "2,2": 8, "2,3": 3, "2,4": 4, "2,5": 2, "2,6": 5, "2,7": 6, "2,8": 7,
-        "3,0": 8, "3,1": 5, "3,2": 9, "3,3": 7, "3,4": 6, "3,5": 1, "3,6": 4, "3,7": 2, "3,8": 3,
-        "4,0": 4, "4,1": 2, "4,2": 6, "4,3": 8, "4,4": 5, "4,5": 3, "4,6": 7, "4,7": 9, "4,8": 1,
-        "5,0": 7, "5,1": 1, "5,2": 3, "5,3": 9, "5,4": 2, "5,5": 4, "5,6": 8, "5,7": 5, "5,8": 6,
-        "6,0": 9, "6,1": 6, "6,2": 1, "6,3": 5, "6,4": 3, "6,5": 7, "6,6": 2, "6,7": 8, "6,8": 4,
-        "7,0": 2, "7,1": 8, "7,2": 7, "7,3": 4, "7,4": 1, "7,5": 9, "7,6": 6, "7,7": 3, "7,8": 5,
-        "8,0": 3, "8,1": 4, "8,2": 5, "8,3": 2, "8,4": 8, "8,5": 6, "8,6": 1, "8,8": 9
+    if usuario_existe_por_correo(usuarios, correo):
+        return None, "El correo ya está registrado"
+    
+    if usuario_existe_por_nombre(usuarios, nombre):
+        return None, "El nombre ya está registrado"
+    
+    nuevo_usuario = {
+        "id": obtener_siguiente_id(usuarios),
+        "correo": correo.lower(),
+        "codigo_ingreso": hashear_codigo(codigo),
+        "nombre": nombre,
+        "fecha_creacion": datetime.now().isoformat()
     }
     
-    #Partida de prueba INTERMEDIO (sin las celdas 1,5 y 7,1)
-    partida_prueba_intermedio = {
-        "0,0": 5, "0,1": 3, "0,2": 4, "0,3": 6, "0,4": 7, "0,5": 8, "0,6": 9, "0,7": 1, "0,8": 2,
-        "1,0": 6, "1,1": 7, "1,2": 2, "1,3": 1, "1,4": 9,
-        "1,6": 3, "1,7": 4, "1,8": 8,
-        "2,0": 1, "2,1": 9, "2,2": 8, "2,3": 3, "2,4": 4, "2,5": 2, "2,6": 5, "2,7": 6, "2,8": 7,
-        "3,0": 8, "3,1": 5, "3,2": 9, "3,3": 7, "3,4": 6, "3,5": 1, "3,6": 4, "3,7": 2, "3,8": 3,
-        "4,0": 4, "4,1": 2, "4,2": 6, "4,3": 8, "4,4": 5, "4,5": 3, "4,6": 7, "4,7": 9, "4,8": 1,
-        "5,0": 7, "5,1": 1, "5,2": 3, "5,3": 9, "5,4": 2, "5,5": 4, "5,6": 8, "5,7": 5, "5,8": 6,
-        "6,0": 9, "6,1": 6, "6,2": 1, "6,3": 5, "6,4": 3, "6,5": 7, "6,6": 2, "6,7": 8, "6,8": 4,
-        "7,0": 2,
-        "7,2": 7, "7,3": 4, "7,4": 1, "7,5": 9, "7,6": 6, "7,7": 3, "7,8": 5,
-        "8,0": 3, "8,1": 4, "8,2": 5, "8,3": 2, "8,4": 8, "8,5": 6, "8,6": 1, "8,7": 7, "8,8": 9
-    }
+    usuarios.append(nuevo_usuario)
+    guardar_usuarios(usuarios)
     
-    #Partida de prueba DIFICIL (sin las celdas 4,4 y 5,7)
-    partida_prueba_dificil = {
-        "0,0": 5, "0,1": 3, "0,2": 4, "0,3": 6, "0,4": 7, "0,5": 8, "0,6": 9, "0,7": 1, "0,8": 2,
-        "1,0": 6, "1,1": 7, "1,2": 2, "1,3": 1, "1,4": 9, "1,5": 5, "1,6": 3, "1,7": 4, "1,8": 8,
-        "2,0": 1, "2,1": 9, "2,2": 8, "2,3": 3, "2,4": 4, "2,5": 2, "2,6": 5, "2,7": 6, "2,8": 7,
-        "3,0": 8, "3,1": 5, "3,2": 9, "3,3": 7, "3,4": 6, "3,5": 1, "3,6": 4, "3,7": 2, "3,8": 3,
-        "4,0": 4, "4,1": 2, "4,2": 6, "4,3": 8,
-        "4,5": 3, "4,6": 7, "4,7": 9, "4,8": 1,
-        "5,0": 7, "5,1": 1, "5,2": 3, "5,3": 9, "5,4": 2, "5,5": 4, "5,6": 8,
-        "5,8": 6,
-        "6,0": 9, "6,1": 6, "6,2": 1, "6,3": 5, "6,4": 3, "6,5": 7, "6,6": 2, "6,7": 8, "6,8": 4,
-        "7,0": 2, "7,1": 8, "7,2": 7, "7,3": 4, "7,4": 1, "7,5": 9, "7,6": 6, "7,7": 3, "7,8": 5,
-        "8,0": 3, "8,1": 4, "8,2": 5, "8,3": 2, "8,4": 8, "8,5": 6, "8,6": 1, "8,7": 7, "8,8": 9
-    }
-    
-    def numero_a_letra(numero):
-        return chr(ord('A') + numero - 1)
-    
-    partida_prueba_facil_letras = {}
-    for posicion, valor in partida_prueba_facil.items():
-        partida_prueba_facil_letras[posicion] = numero_a_letra(valor)
-    
-    partida_prueba_intermedio_letras = {}
-    for posicion, valor in partida_prueba_intermedio.items():
-        partida_prueba_intermedio_letras[posicion] = numero_a_letra(valor)
-    
-    partida_prueba_dificil_letras = {}
-    for posicion, valor in partida_prueba_dificil.items():
-        partida_prueba_dificil_letras[posicion] = numero_a_letra(valor)
-    
-    datos_sudoku_numeros = {
-        "facil": {
-            "prueba": partida_prueba_facil,
-            "1": { "0,0": 5, "0,1": 3, "0,4": 7, "1,0": 6, "1,3": 1, "1,4": 9, "1,5": 5, "2,1": 9, "2,2": 8, "2,7": 6, "3,0": 8, "3,4": 6, "3,8": 3, "4,0": 4, "4,3": 8, "4,5": 3, "4,8": 1, "5,0": 7, "5,4": 2, "5,8": 6, "6,1": 6, "6,6": 2, "6,7": 8, "7,3": 4, "7,4": 1, "7,5": 9, "7,8": 5, "8,4": 8, "8,7": 7, "8,8": 9 },
-            "2": { "0,2": 1, "0,5": 2, "1,2": 5, "1,3": 6, "1,8": 3, "2,1": 4, "2,6": 1, "3,0": 1, "3,4": 5, "3,6": 2, "4,1": 6, "4,4": 1, "4,7": 8, "5,2": 8, "5,4": 6, "5,8": 5, "6,2": 3, "6,7": 4, "7,0": 8, "7,5": 4, "7,6": 5, "8,3": 7, "8,6": 9 },
-            "3": { "0,0": 3, "0,3": 2, "0,8": 1, "1,4": 4, "2,1": 5, "2,5": 8, "3,2": 9, "3,7": 4, "4,0": 8, "4,4": 1, "4,8": 2, "5,1": 6, "5,6": 7, "6,3": 5, "6,7": 1, "7,4": 9, "8,0": 7, "8,5": 6, "8,8": 3 },
-            "4": { "0,1": 8, "0,5": 9, "1,0": 4, "1,2": 3, "1,6": 2, "2,4": 5, "2,7": 1, "3,1": 5, "3,5": 4, "4,2": 9, "4,6": 8, "5,3": 7, "5,7": 6, "6,1": 2, "6,4": 3, "7,2": 1, "7,6": 5, "7,8": 4, "8,3": 6, "8,7": 2 }
-        },
-        "intermedio": {
-            "prueba": partida_prueba_intermedio,
-            "1": { "0,1": 2, "0,4": 8, "1,0": 3, "1,5": 1, "1,7": 6, "2,2": 7, "2,3": 6, "3,1": 1, "3,6": 4, "4,0": 9, "4,4": 5, "4,8": 2, "5,2": 3, "5,7": 7, "6,5": 9, "6,6": 3, "7,1": 4, "7,3": 2, "7,8": 8, "8,4": 1, "8,7": 5 },
-            "2": { "0,4": 2, "0,7": 3, "1,2": 9, "1,5": 8, "2,0": 1, "2,3": 5, "3,2": 4, "3,8": 7, "4,1": 7, "4,7": 1, "5,0": 5, "5,6": 6, "6,5": 7, "6,8": 2, "7,3": 4, "7,6": 5, "8,1": 6, "8,4": 1 },
-            "3": { "0,2": 8, "0,6": 4, "1,1": 3, "1,4": 7, "2,0": 6, "2,8": 1, "3,3": 8, "3,5": 5, "4,0": 4, "4,8": 6, "5,3": 1, "5,5": 9, "6,0": 7, "6,8": 3, "7,4": 6, "7,7": 2, "8,2": 1, "8,6": 5 },
-            "4": { "0,5": 1, "1,2": 4, "1,7": 9, "2,0": 5, "2,4": 6, "3,1": 8, "3,3": 4, "4,4": 2, "5,5": 7, "5,7": 1, "6,4": 5, "6,8": 6, "7,1": 3, "7,6": 2, "8,3": 9 }
-        },
-        "dificil": {
-            "prueba": partida_prueba_dificil
-        }
-    }
-    
-    datos_sudoku_letras = {
-        "facil": {
-            "prueba": partida_prueba_facil_letras
-        },
-        "intermedio": {
-            "prueba": partida_prueba_intermedio_letras
-        },
-        "dificil": {
-            "prueba": partida_prueba_dificil_letras
-        }
-    }
-    
-    for nivel in ["facil", "intermedio"]:
-        for partida_id in datos_sudoku_numeros[nivel]:
-            if partida_id != "prueba":
-                partida_letras = {}
-                for posicion, valor in datos_sudoku_numeros[nivel][partida_id].items():
-                    partida_letras[posicion] = numero_a_letra(valor)
-                datos_sudoku_letras[nivel][partida_id] = partida_letras
-    
-    datos_sudoku = {
-        "numeros": datos_sudoku_numeros,
-        "letras": datos_sudoku_letras
-    }
-    
-    archivo = open(nombre_archivo, "w")
-    json.dump(datos_sudoku, archivo, indent=4)
-    archivo.close()
-    
-    return True
+    return nuevo_usuario, "Usuario creado exitosamente"
+
+#E:str correo - Correo del usuario a buscar
+#S:dict - Diccionario del usuario o None si no existe
+#Funcion:Obtiene un usuario por su correo electrónico
+def obtener_usuario_por_correo(correo):
+    usuarios = cargar_usuarios()
+    for usuario in usuarios:
+        if usuario["correo"].lower() == correo.lower():
+            return usuario
+    return None
+
+#E:str correo - Correo del usuario a actualizar
+#E:str nuevo_codigo - Nuevo código de ingreso
+#S:bool - True si se actualizó correctamente, False en caso contrario
+#Funcion:Actualiza el código de ingreso de un usuario en el archivo
+def actualizar_codigo_ingreso(correo, nuevo_codigo):
+    usuarios = cargar_usuarios()
+    for usuario in usuarios:
+        if usuario["correo"].lower() == correo.lower():
+            usuario["codigo_ingreso"] = hashear_codigo(nuevo_codigo)
+            guardar_usuarios(usuarios)
+            return True
+    return False
+
+#====================FUNCIONES DE GENERACION DE SUDOKU====================
 
 #E:ninguna
-#S:dict - Diccionario con la configuracion por defecto
-#Funcion:Resetea el archivo de configuracion a los valores por defecto y los devuelve
-def resetear_configuracion_a_default():
-    directorio_script = obtener_directorio_script()
-    archivo_config = os.path.join(directorio_script, "sudoku2026configuracion.json")
+#S:list - Tablero 9x9 con Sudoku resuelto
+#Funcion:Genera un Sudoku completamente resuelto usando backtracking con valores aleatorios
+def generar_sudoku_valido():
+    tablero = [[0 for _ in range(9)] for _ in range(9)]
     
-    configuracion_default = {
-        "nivel": "facil",
-        "reloj": "cronometro",
-        "top_x": 0,
-        "elementos": "numeros"
+    def es_valido(tablero, fila, columna, numero):
+        #Verificar fila
+        for c in range(9):
+            if tablero[fila][c] == numero:
+                return False
+        
+        #Verificar columna
+        for r in range(9):
+            if tablero[r][columna] == numero:
+                return False
+        
+        #Verificar cuadrante 3x3
+        caja_fila = (fila // 3) * 3
+        caja_columna = (columna // 3) * 3
+        for r in range(caja_fila, caja_fila + 3):
+            for c in range(caja_columna, caja_columna + 3):
+                if tablero[r][c] == numero:
+                    return False
+        
+        return True
+    
+    def resolver(tablero):
+        for fila in range(9):
+            for columna in range(9):
+                if tablero[fila][columna] == 0:
+                    numeros = list(range(1, 10))
+                    random.shuffle(numeros)
+                    for numero in numeros:
+                        if es_valido(tablero, fila, columna, numero):
+                            tablero[fila][columna] = numero
+                            if resolver(tablero):
+                                return True
+                            tablero[fila][columna] = 0
+                    return False
+        return True
+    
+    resolver(tablero)
+    return tablero
+
+#E:list tablero - Tablero de Sudoku resuelto
+#E:str dificultad - Nivel de dificultad ("facil","intermedio","dificil")
+#S:list - Tablero con celdas eliminadas según la dificultad
+#Funcion:Elimina celdas del tablero según la dificultad (30,40,50 celdas respectivamente)
+def eliminar_celdas(tablero, dificultad):
+    copia = [fila[:] for fila in tablero]
+    
+    eliminaciones = {
+        "facil": 30,
+        "intermedio": 40,
+        "dificil": 50
     }
     
-    archivo = open(archivo_config, "w")
-    json.dump(configuracion_default, archivo, indent=4)
-    archivo.close()
+    cantidad = eliminaciones.get(dificultad, 30)
     
-    return configuracion_default
+    posiciones = [(f, c) for f in range(9) for c in range(9)]
+    random.shuffle(posiciones)
+    
+    for i in range(cantidad):
+        fila, columna = posiciones[i]
+        copia[fila][columna] = 0
+    
+    return copia
+
+#E:str dificultad - Nivel de dificultad ("facil","intermedio","dificil")
+#S:tuple - (tablero_juego, tablero_solucion) ambos como listas 9x9
+#Funcion:Genera una partida de Sudoku completa con el nivel de dificultad especificado
+def generar_partida_sudoku(dificultad):
+    tablero_resuelto = generar_sudoku_valido()
+    tablero_juego = eliminar_celdas(tablero_resuelto, dificultad)
+    return tablero_juego, tablero_resuelto
+
+#E:list tablero - Tablero 9x9 de Sudoku
+#S:dict - Diccionario con posiciones "fila,columna": valor para celdas no vacías
+#Funcion:Convierte un tablero en un diccionario de posiciones con valores
+def partida_a_diccionario(tablero):
+    resultado = {}
+    for fila in range(9):
+        for columna in range(9):
+            if tablero[fila][columna] != 0:
+                resultado[f"{fila},{columna}"] = tablero[fila][columna]
+    return resultado
+
+#E:ninguna
+#S:dict - Historial de partidas por nivel {"facil":[],"intermedio":[],"dificil":[]}
+#Funcion:Carga el historial de partidas generadas desde historial_partidas.json
+def cargar_historial_partidas():
+    directorio = obtener_directorio_script()
+    archivo = os.path.join(directorio, "historial_partidas.json")
+    
+    if not os.path.exists(archivo):
+        historial = {"facil": [], "intermedio": [], "dificil": []}
+        with open(archivo, "w") as f:
+            json.dump(historial, f, indent=4)
+        return historial
+    
+    with open(archivo, "r") as f:
+        return json.load(f)
+
+#E:dict historial - Historial de partidas
+#S:None
+#Funcion:Guarda el historial de partidas generadas en historial_partidas.json
+def guardar_historial_partidas(historial):
+    directorio = obtener_directorio_script()
+    archivo = os.path.join(directorio, "historial_partidas.json")
+    
+    with open(archivo, "w") as f:
+        json.dump(historial, f, indent=4)
+
+#E:dict historial - Historial de partidas
+#E:str nivel - Nivel de dificultad
+#E:str partida - Partida en formato JSON string
+#S:bool - True si la partida ya está en el historial, False en caso contrario
+#Funcion:Verifica si una partida ya está en el historial del nivel especificado
+def partida_en_historial(historial, nivel, partida):
+    return partida in historial[nivel]
+
+#E:dict historial - Historial de partidas
+#E:str nivel - Nivel de dificultad
+#E:str partida - Partida en formato JSON string
+#S:None
+#Funcion:Agrega una partida al historial manteniendo máximo 50 partidas por nivel
+def agregar_partida_historial(historial, nivel, partida):
+    if partida not in historial[nivel]:
+        historial[nivel].append(partida)
+        if len(historial[nivel]) > 50:
+            historial[nivel].pop(0)
+        guardar_historial_partidas(historial)
 
 #E:str nivel - Nivel de dificultad
-#E:str tipo_elementos - "numeros" o "letras"
-#S:dict - Partida aleatoria o None
-#Funcion:Carga una partida aleatoria del archivo JSON
-def cargar_partida_aleatoria(nivel, tipo_elementos):
-    directorio_script = obtener_directorio_script()
-    nombre_archivo = os.path.join(directorio_script, "sudoku2026partidas.json")
+#S:tuple - (tablero_juego, tablero_solucion) partida única no repetida
+#Funcion:Genera una partida única que no esté en el historial, con máximo 100 intentos
+def generar_partida_unica(nivel):
+    historial = cargar_historial_partidas()
+    intentos = 0
+    max_intentos = 100
     
-    if not os.path.exists(nombre_archivo):
-        crear_archivo_partidas_si_no_existe()
+    while intentos < max_intentos:
+        tablero_juego, tablero_solucion = generar_partida_sudoku(nivel)
+        partida_dict = partida_a_diccionario(tablero_juego)
+        partida_str = json.dumps(partida_dict, sort_keys=True)
+        
+        if not partida_en_historial(historial, nivel, partida_str):
+            agregar_partida_historial(historial, nivel, partida_str)
+            return tablero_juego, tablero_solucion
+        
+        intentos += 1
     
-    archivo = open(nombre_archivo, "r")
-    datos_partidas = json.load(archivo)
-    archivo.close()
+    #Si no se encuentra una única, permitir repetición
+    tablero_juego, tablero_solucion = generar_partida_sudoku(nivel)
+    return tablero_juego, tablero_solucion
+
+#====================VENTANA DE LOGIN====================
+
+#E:ninguna
+#S:tk.Toplevel - Ventana de inicio de sesión
+#Funcion:Muestra la ventana de inicio de sesión con campos para correo y código
+def mostrar_ventana_login():
+    ventana_login = tk.Toplevel()
+    ventana_login.title("Sudoku - Inicio de Sesión")
+    ventana_login.geometry("450x400")
+    ventana_login.resizable(False, False)
     
-    if tipo_elementos not in datos_partidas:
-        return None
+    ventana_login.update_idletasks()
+    x = (ventana_login.winfo_screenwidth() // 2) - (450 // 2)
+    y = (ventana_login.winfo_screenheight() // 2) - (400 // 2)
+    ventana_login.geometry(f"+{x}+{y}")
     
-    if nivel not in datos_partidas[tipo_elementos]:
-        return None
+    frame_principal = tk.Frame(ventana_login, padx=30, pady=30)
+    frame_principal.pack(fill=tk.BOTH, expand=True)
     
-    partidas_disponibles = datos_partidas[tipo_elementos][nivel]
-    if len(partidas_disponibles) == 0:
-        return None
+    titulo = tk.Label(frame_principal, text="SUDOKU 2026", font=("Arial", 20, "bold"))
+    titulo.pack(pady=(0, 20))
     
-    lista_ids = list(partidas_disponibles.keys())
-    partida_id_aleatorio = random.choice(lista_ids)
-    return partidas_disponibles[partida_id_aleatorio]
+    subtitulo = tk.Label(frame_principal, text="Inicio de Sesión", font=("Arial", 14))
+    subtitulo.pack(pady=(0, 20))
+    
+    frame_entrada = tk.Frame(frame_principal)
+    frame_entrada.pack(fill=tk.X, pady=10)
+    
+    label_correo = tk.Label(frame_entrada, text="Correo electrónico:", font=("Arial", 10))
+    label_correo.pack(anchor=tk.W, pady=(0, 5))
+    
+    entrada_correo = tk.Entry(frame_entrada, font=("Arial", 12), width=40)
+    entrada_correo.pack(fill=tk.X, pady=(0, 15))
+    
+    label_codigo = tk.Label(frame_entrada, text="Código de ingreso (6 dígitos):", font=("Arial", 10))
+    label_codigo.pack(anchor=tk.W, pady=(0, 5))
+    
+    entrada_codigo = tk.Entry(frame_entrada, font=("Arial", 12), width=40, show="*")
+    entrada_codigo.pack(fill=tk.X, pady=(0, 15))
+    
+    label_estado = tk.Label(frame_entrada, text="", font=("Arial", 9), fg="red")
+    label_estado.pack(pady=(0, 10))
+    
+    #E:ninguna
+    #S:None
+    #Funcion:Envía un código de ingreso al correo ingresado, crea usuario si no existe
+    def enviar_codigo():
+        correo = entrada_correo.get().strip()
+        
+        if not correo:
+            label_estado.config(text="Por favor, ingrese un correo electrónico", fg="red")
+            return
+        
+        if not validar_correo(correo):
+            label_estado.config(text="El formato del correo no es válido", fg="red")
+            return
+        
+        usuario = obtener_usuario_por_correo(correo)
+        
+        if not usuario:
+            respuesta = messagebox.askyesno(
+                "Usuario no registrado",
+                f"El correo '{correo}' no está registrado.\n\n¿Desea crear un nuevo usuario?"
+            )
+            if respuesta:
+                ventana_login.withdraw()
+                ventana_nombre = tk.Toplevel(ventana_login)
+                ventana_nombre.title("Crear Usuario")
+                ventana_nombre.geometry("400x250")
+                ventana_nombre.resizable(False, False)
+                ventana_nombre.transient(ventana_login)
+                ventana_nombre.grab_set()
+                
+                ventana_nombre.update_idletasks()
+                x = (ventana_nombre.winfo_screenwidth() // 2) - (400 // 2)
+                y = (ventana_nombre.winfo_screenheight() // 2) - (250 // 2)
+                ventana_nombre.geometry(f"+{x}+{y}")
+                
+                frame_nombre = tk.Frame(ventana_nombre, padx=30, pady=30)
+                frame_nombre.pack(fill=tk.BOTH, expand=True)
+                
+                label_nombre = tk.Label(frame_nombre, text="Nombre de usuario:", font=("Arial", 12))
+                label_nombre.pack(anchor=tk.W, pady=(0, 5))
+                
+                entrada_nombre = tk.Entry(frame_nombre, font=("Arial", 12), width=30)
+                entrada_nombre.pack(fill=tk.X, pady=(0, 20))
+                
+                label_nombre_info = tk.Label(frame_nombre, text="1-30 caracteres (letras, números y espacios)", font=("Arial", 9), fg="gray")
+                label_nombre_info.pack(anchor=tk.W, pady=(0, 10))
+                
+                label_estado_nombre = tk.Label(frame_nombre, text="", font=("Arial", 9), fg="red")
+                label_estado_nombre.pack(pady=(0, 10))
+                
+                #E:ninguna
+                #S:None
+                #Funcion:Crea un nuevo usuario con el nombre ingresado y envía código por correo
+                def crear_nuevo_usuario():
+                    nombre = entrada_nombre.get().strip()
+                    
+                    if not validar_nombre(nombre):
+                        label_estado_nombre.config(text="El nombre debe tener 1-30 caracteres (letras, números y espacios)")
+                        return
+                    
+                    if usuario_existe_por_nombre(cargar_usuarios(), nombre):
+                        label_estado_nombre.config(text="El nombre ya está registrado")
+                        return
+                    
+                    codigo = generar_codigo_ingreso()
+                    usuario_nuevo, mensaje = crear_usuario(correo, nombre, codigo)
+                    
+                    if usuario_nuevo:
+                        if enviar_codigo_por_correo(correo, codigo):
+                            label_estado_nombre.config(text="Usuario creado. Se ha enviado un código a tu correo", fg="green")
+                            ventana_nombre.destroy()
+                            ventana_login.deiconify()
+                            label_estado.config(text="Código enviado a tu correo", fg="green")
+                            entrada_codigo.focus()
+                        else:
+                            label_estado_nombre.config(text="Error al enviar el correo. Intente nuevamente", fg="red")
+                    else:
+                        label_estado_nombre.config(text=mensaje, fg="red")
+                
+                boton_crear = tk.Button(frame_nombre, text="CREAR USUARIO", command=crear_nuevo_usuario, width=20, height=2)
+                boton_crear.pack(pady=10)
+                
+                boton_cancelar = tk.Button(frame_nombre, text="CANCELAR", command=lambda: [ventana_nombre.destroy(), ventana_login.deiconify()], width=20)
+                boton_cancelar.pack()
+                
+            return
+        
+        #Usuario existe, enviar código
+        codigo = generar_codigo_ingreso()
+        if actualizar_codigo_ingreso(correo, codigo):
+            if enviar_codigo_por_correo(correo, codigo):
+                label_estado.config(text="Código enviado a tu correo", fg="green")
+                entrada_codigo.focus()
+            else:
+                label_estado.config(text="Error al enviar el correo. Intente nuevamente", fg="red")
+        else:
+            label_estado.config(text="Error al actualizar el código", fg="red")
+    
+    #E:ninguna
+    #S:None
+    #Funcion:Verifica el código de ingreso ingresado y autentica al usuario
+    def verificar_ingreso():
+        correo = entrada_correo.get().strip()
+        codigo = entrada_codigo.get().strip()
+        
+        if not correo:
+            label_estado.config(text="Ingrese el correo electrónico", fg="red")
+            return
+        
+        if not codigo:
+            label_estado.config(text="Ingrese el código de ingreso", fg="red")
+            return
+        
+        if len(codigo) != 6 or not codigo.isdigit():
+            label_estado.config(text="El código debe tener 6 dígitos", fg="red")
+            return
+        
+        usuario = obtener_usuario_por_correo(correo)
+        if not usuario:
+            label_estado.config(text="Correo no registrado", fg="red")
+            return
+        
+        codigo_hash = hashear_codigo(codigo)
+        if usuario["codigo_ingreso"] == codigo_hash:
+            ventana_login.destroy()
+            crear_ventana_principal(usuario)
+        else:
+            label_estado.config(text="Código incorrecto", fg="red")
+            entrada_codigo.delete(0, tk.END)
+            entrada_codigo.focus()
+    
+    frame_botones = tk.Frame(frame_entrada)
+    frame_botones.pack(fill=tk.X, pady=10)
+    
+    boton_enviar_codigo = tk.Button(frame_botones, text="ENVIAR CÓDIGO", command=enviar_codigo, width=20, height=2)
+    boton_enviar_codigo.pack(side=tk.LEFT, padx=5)
+    
+    boton_ingresar = tk.Button(frame_botones, text="INGRESAR", command=verificar_ingreso, width=20, height=2, bg="lightgreen")
+    boton_ingresar.pack(side=tk.RIGHT, padx=5)
+    
+    entrada_correo.bind("<Return>", lambda e: enviar_codigo())
+    entrada_codigo.bind("<Return>", lambda e: verificar_ingreso())
+    
+    return ventana_login
+
+#====================FUNCIONES EXISTENTES MODIFICADAS====================
 
 #E:str nombre_jugador - Nombre del jugador
 #E:str dificultad - Nivel de dificultad
 #E:int segundos - Tiempo en segundos que tardó
 #E:str fecha_hora - Fecha y hora en formato ISO8601
 #S:None
-#Funcion:Guarda una partida completada en el archivo de bitacora
+#Funcion:Guarda una partida completada en el archivo de bitácora
 def guardar_partida_en_bitacora(nombre_jugador, dificultad, segundos, fecha_hora):
     directorio_script = obtener_directorio_script()
     nombre_archivo = os.path.join(directorio_script, "sudoku2026_bitacora_jugadas.json")
     
     datos_bitacora = {}
     if os.path.exists(nombre_archivo):
-        archivo = open(nombre_archivo, "r")
-        datos_bitacora = json.load(archivo)
-        archivo.close()
+        with open(nombre_archivo, "r") as archivo:
+            datos_bitacora = json.load(archivo)
     
     if nombre_jugador not in datos_bitacora:
         datos_bitacora[nombre_jugador] = []
@@ -227,13 +573,12 @@ def guardar_partida_en_bitacora(nombre_jugador, dificultad, segundos, fecha_hora
         "fecha_hora": fecha_hora
     })
     
-    archivo = open(nombre_archivo, "w")
-    json.dump(datos_bitacora, archivo, indent=4)
-    archivo.close()
+    with open(nombre_archivo, "w") as archivo:
+        json.dump(datos_bitacora, archivo, indent=4)
 
 #E:str nombre - Nombre del jugador a verificar
-#S:bool - True si el nombre ya existe en la bitacora, False en caso contrario
-#Funcion:Verifica si un nombre de jugador ya existe en el archivo de bitacora
+#S:bool - True si el nombre ya existe en la bitácora, False en caso contrario
+#Funcion:Verifica si un nombre de jugador ya existe en el archivo de bitácora
 def nombre_existe_en_bitacora(nombre):
     directorio_script = obtener_directorio_script()
     archivo_bitacora = os.path.join(directorio_script, "sudoku2026_bitacora_jugadas.json")
@@ -241,9 +586,8 @@ def nombre_existe_en_bitacora(nombre):
     if not os.path.exists(archivo_bitacora):
         return False
     
-    archivo = open(archivo_bitacora, "r")
-    datos_bitacora = json.load(archivo)
-    archivo.close()
+    with open(archivo_bitacora, "r") as archivo:
+        datos_bitacora = json.load(archivo)
     
     return nombre in datos_bitacora
 
@@ -276,8 +620,8 @@ def formatear_fecha(fecha_hora_iso):
     return fecha_hora_iso
 
 #E:ninguna
-#S:None
-#Funcion:Genera un archivo PDF con el TOP X de mejores tiempos
+#S:bool - True si se generó el TOP X, False en caso contrario
+#Funcion:Genera un archivo PDF o TXT con el TOP X de mejores tiempos
 def generar_top_x():
     directorio_script = obtener_directorio_script()
     archivo_bitacora = os.path.join(directorio_script, "sudoku2026_bitacora_jugadas.json")
@@ -285,18 +629,16 @@ def generar_top_x():
     
     top_x = 0
     if os.path.exists(archivo_config):
-        archivo = open(archivo_config, "r")
-        config = json.load(archivo)
-        archivo.close()
-        top_x = config.get("top_x", 0)
+        with open(archivo_config, "r") as archivo:
+            config = json.load(archivo)
+            top_x = config.get("top_x", 0)
     
     if not os.path.exists(archivo_bitacora):
         messagebox.showinfo("TOP X", "No hay partidas registradas en la bitácora.")
         return False
     
-    archivo = open(archivo_bitacora, "r")
-    datos_bitacora = json.load(archivo)
-    archivo.close()
+    with open(archivo_bitacora, "r") as archivo:
+        datos_bitacora = json.load(archivo)
     
     partidas_por_nivel = {
         "facil": [],
@@ -439,7 +781,7 @@ def generar_top_x():
 
 #E:ninguna
 #S:None
-#Funcion:Muestra la ventana "Acerca de" con informacion del programa
+#Funcion:Muestra la ventana "Acerca de" con información del programa
 def mostrar_acerca_de():
     ventana_acerca = tk.Toplevel()
     ventana_acerca.title("Acerca de")
@@ -458,7 +800,7 @@ def mostrar_acerca_de():
     titulo = tk.Label(frame_principal, text="Juego Sudoku", font=("Arial", 16, "bold"))
     titulo.pack(pady=(0, 10))
     
-    version = tk.Label(frame_principal, text="Versión: 3.13", font=("Arial", 10))
+    version = tk.Label(frame_principal, text="Versión: 4.0", font=("Arial", 10))
     version.pack()
     
     fecha = tk.Label(frame_principal, text="Fecha de creación: 17 de mayo", font=("Arial", 10))
@@ -470,29 +812,32 @@ def mostrar_acerca_de():
     boton_cerrar = tk.Button(frame_principal, text="Cerrar", command=ventana_acerca.destroy, width=15)
     boton_cerrar.pack(pady=15)
 
-#E:tk.Tk ventana_principal - Ventana principal del menu
+#E:tk.Tk ventana_principal - Ventana principal del menú
+#E:dict usuario - Diccionario con datos del usuario autenticado
 #S:None
-#Funcion:Crea y muestra la ventana de juego
-def crear_ventana_juego(ventana_principal):
+#Funcion:Crea y muestra la ventana de juego con el usuario autenticado
+def crear_ventana_juego(ventana_principal, usuario):
     directorio_script = obtener_directorio_script()
     archivo_config = os.path.join(directorio_script, "sudoku2026configuracion.json")
     archivo_partidas_guardadas = os.path.join(directorio_script, "sudoku2026juegoactual.json")
     
-    archivo = open(archivo_config, "r")
-    configuracion_actual = json.load(archivo)
-    archivo.close()
+    with open(archivo_config, "r") as archivo:
+        configuracion_actual = json.load(archivo)
     
     nivel_actual = configuracion_actual.get("nivel", "facil")
     tipo_elementos = configuracion_actual.get("elementos", "numeros")
     tipo_reloj_actual = configuracion_actual.get("reloj", "cronometro")
     tiempo_inicial = configuracion_actual.get("tiempo_inicial", {"horas": 0, "minutos": 0, "segundos": 0})
     
-    partida_cargada = cargar_partida_aleatoria(nivel_actual, tipo_elementos)
+    #Generar partida en tiempo real en lugar de cargar del archivo
+    tablero_juego, tablero_solucion = generar_partida_unica(nivel_actual)
     
-    if partida_cargada is None:
-        messagebox.showerror("Error", f"NO HAY PARTIDAS DE ESTE NIVEL: {nivel_actual}")
-        ventana_principal.deiconify()
-        return
+    #Convertir tablero a diccionario para mantener compatibilidad con el código existente
+    partida_cargada = {}
+    for fila in range(9):
+        for columna in range(9):
+            if tablero_juego[fila][columna] != 0:
+                partida_cargada[f"{fila},{columna}"] = tablero_juego[fila][columna]
     
     elemento_seleccionado = None
     boton_seleccionado = None
@@ -502,7 +847,7 @@ def crear_ventana_juego(ventana_principal):
     tiempo_transcurrido = 0
     temporizador_activo = None
     fecha_hora_inicio = None
-    nombre_jugador = ""
+    nombre_jugador = usuario["nombre"]  #Tomar el nombre del usuario autenticado
     tipo_reloj = tipo_reloj_actual
     timer_se_convirtio_a_cronometro = False
     tiempo_acumulado_al_convertir = 0
@@ -518,6 +863,9 @@ def crear_ventana_juego(ventana_principal):
     lista_botones_accion = []
     lista_celdas_tablero = []
     
+    #E:str elemento - Elemento a convertir ("1"-"9" o "A"-"I")
+    #S:int - Número correspondiente (1-9) o 0 si está vacío
+    #Funcion:Convierte un elemento (número o letra) a su valor numérico
     def elemento_a_numero(elemento):
         if elemento == "":
             return 0
@@ -539,17 +887,26 @@ def crear_ventana_juego(ventana_principal):
     ventana_juego.geometry("950x800")
     ventana_juego.resizable(False, False)
     
+    #E:ninguna
+    #S:None
+    #Funcion:Pausa el temporizador cancelando la llamada pendiente
     def pausar_temporizador():
         nonlocal temporizador_activo
         if temporizador_activo:
             ventana_juego.after_cancel(temporizador_activo)
             temporizador_activo = None
     
+    #E:ninguna
+    #S:None
+    #Funcion:Reanuda el temporizador si el juego está iniciado y no hay temporizador activo
     def reanudar_temporizador():
         nonlocal temporizador_activo
         if juego_iniciado and temporizador_activo is None and tipo_reloj != "no_reloj":
             temporizador_activo = ventana_juego.after(1000, actualizar_temporizador)
     
+    #E:ninguna
+    #S:None
+    #Funcion:Actualiza las etiquetas del temporizador con el tiempo actual
     def actualizar_temporizador_display():
         if tipo_reloj == "no_reloj":
             return
@@ -568,6 +925,9 @@ def crear_ventana_juego(ventana_principal):
             etiqueta_minutos.config(text=f"Minutos: {minutos:02d}")
             etiqueta_segundos.config(text=f"Segundos: {segundos:02d}")
     
+    #E:ninguna
+    #S:None
+    #Funcion:Actualiza el temporizador cada segundo, incrementando o decrementando según el tipo
     def actualizar_temporizador():
         nonlocal tiempo_transcurrido, tiempo_restante, temporizador_activo, juego_iniciado, tipo_reloj, timer_se_convirtio_a_cronometro, tiempo_acumulado_al_convertir
         
@@ -597,8 +957,11 @@ def crear_ventana_juego(ventana_principal):
                     reanudar_temporizador()
                 else:
                     ventana_juego.destroy()
-                    crear_ventana_juego(ventana_principal)
+                    crear_ventana_juego(ventana_principal, usuario)
     
+    #E:ninguna
+    #S:bool - True si todas las celdas están llenas, False en caso contrario
+    #Funcion:Verifica si el tablero está completamente lleno
     def verificar_finalizacion():
         for fila in range(9):
             for columna in range(9):
@@ -606,6 +969,9 @@ def crear_ventana_juego(ventana_principal):
                     return False
         return True
     
+    #E:ninguna
+    #S:None
+    #Funcion:Finaliza el juego, guarda la partida en bitácora y cierra la ventana
     def finalizar_juego():
         nonlocal juego_iniciado
         
@@ -628,8 +994,11 @@ def crear_ventana_juego(ventana_principal):
         ventana_juego.deiconify()
         
         ventana_juego.destroy()
-        crear_ventana_juego(ventana_principal)
+        crear_ventana_juego(ventana_principal, usuario)
     
+    #E:ninguna
+    #S:None
+    #Funcion:Guarda el estado actual del juego en un archivo JSON
     def guardar_juego():
         nonlocal juego_iniciado, nombre_jugador, nivel_actual, tipo_elementos, tipo_reloj_actual
         nonlocal tiempo_inicial_segundos, tiempo_transcurrido, tiempo_restante, tipo_reloj
@@ -647,9 +1016,8 @@ def crear_ventana_juego(ventana_principal):
         
         datos_guardados = {}
         if os.path.exists(archivo_partidas_guardadas):
-            archivo = open(archivo_partidas_guardadas, "r")
-            datos_guardados = json.load(archivo)
-            archivo.close()
+            with open(archivo_partidas_guardadas, "r") as archivo:
+                datos_guardados = json.load(archivo)
         
         datos_guardados[clave] = {
             "nombre_jugador": nombre_jugador,
@@ -668,14 +1036,16 @@ def crear_ventana_juego(ventana_principal):
             "pila_jugadas_eliminadas": pila_jugadas_eliminadas
         }
         
-        archivo = open(archivo_partidas_guardadas, "w")
-        json.dump(datos_guardados, archivo, indent=4)
-        archivo.close()
+        with open(archivo_partidas_guardadas, "w") as archivo:
+            json.dump(datos_guardados, archivo, indent=4)
         
         mostrar_error_general_simple(f"Juego guardado correctamente para {nombre_jugador} (nivel {nivel_actual})", "Juego Guardado", yesno=False)
         
         reanudar_temporizador()
     
+    #E:ninguna
+    #S:None
+    #Funcion:Carga un juego guardado desde el archivo JSON
     def cargar_juego():
         nonlocal partida_cargada, nombre_jugador, nivel_actual, tipo_elementos
         nonlocal tipo_reloj_actual, tiempo_inicial_segundos, tiempo_transcurrido, tiempo_restante
@@ -687,15 +1057,11 @@ def crear_ventana_juego(ventana_principal):
             mostrar_error_general_simple("No se puede cargar un juego mientras hay una partida en curso. Termine o borre el juego actual primero.")
             return
         
-        nombre_temporal = entrada_nombre_jugador.get().strip()
-        if len(nombre_temporal) < 1 or len(nombre_temporal) > 30:
-            mostrar_error_general_simple("Debe ingresar un nombre de jugador (1-30 caracteres) para buscar el juego guardado.")
-            return
+        nombre_temporal = nombre_jugador  #Usar el nombre del usuario autenticado
         
         if os.path.exists(archivo_partidas_guardadas):
-            archivo = open(archivo_partidas_guardadas, "r")
-            datos_guardados = json.load(archivo)
-            archivo.close()
+            with open(archivo_partidas_guardadas, "r") as archivo:
+                datos_guardados = json.load(archivo)
             
             clave = f"{nombre_temporal}_{nivel_actual}"
             if clave in datos_guardados:
@@ -723,10 +1089,6 @@ def crear_ventana_juego(ventana_principal):
                     for fila in range(9):
                         for columna in range(9):
                             matriz_valores_iniciales[fila][columna] = matriz_valores_actuales[fila][columna] if matriz_fijos[fila][columna] else ""
-                    
-                    entrada_nombre_jugador.delete(0, tk.END)
-                    entrada_nombre_jugador.insert(0, nombre_jugador)
-                    entrada_nombre_jugador.config(state=tk.DISABLED)
                     
                     for fila in range(9):
                         for columna in range(9):
@@ -766,6 +1128,11 @@ def crear_ventana_juego(ventana_principal):
         else:
             mostrar_error_general_simple("No hay juegos guardados.")
     
+    #E:str mensaje - Mensaje a mostrar
+    #E:str titulo - Título de la ventana
+    #E:bool yesno - True si es pregunta de sí/no, False si es solo información
+    #S:bool o None - Respuesta del usuario si yesno=True, None si yesno=False
+    #Funcion:Muestra un mensaje en una ventana emergente, pausando el temporizador
     def mostrar_error_general_simple(mensaje, titulo="Error", yesno=False):
         pausar_temporizador()
         ventana_juego.withdraw()
@@ -781,6 +1148,11 @@ def crear_ventana_juego(ventana_principal):
         
         return resultado
     
+    #E:str mensaje - Mensaje de error
+    #E:int fila_error - Fila donde ocurrió el error (opcional)
+    #E:int columna_error - Columna donde ocurrió el error (opcional)
+    #S:None
+    #Funcion:Muestra una ventana de error con un tablero que resalta la celda conflictiva
     def mostrar_ventana_error(mensaje, fila_error=None, columna_error=None):
         nonlocal juego_iniciado
         
@@ -826,6 +1198,9 @@ def crear_ventana_juego(ventana_principal):
                                          bg=color_fondo, anchor="center")
                         celda.grid(row=celda_fila, column=celda_columna, padx=1, pady=1)
         
+        #E:ninguna
+        #S:None
+        #Funcion:Cierra la ventana de error y reanuda el juego
         def cerrar_ventana_error():
             ventana_error.destroy()
             nonlocal juego_iniciado
@@ -839,6 +1214,11 @@ def crear_ventana_juego(ventana_principal):
         
         ventana_juego.wait_window(ventana_error)
     
+    #E:int fila - Fila de la celda
+    #E:int columna - Columna de la celda
+    #E:str elemento - Elemento a validar
+    #S:bool - True si la jugada es válida, False en caso contrario
+    #Funcion:Valida si una jugada es válida según las reglas del Sudoku
     def validar_jugada(fila, columna, elemento):
         if elemento == "":
             return True
@@ -872,6 +1252,9 @@ def crear_ventana_juego(ventana_principal):
         
         return True
     
+    #E:ninguna
+    #S:None
+    #Funcion:Deshace la última jugada realizada
     def deshacer_jugada():
         nonlocal juego_iniciado
         if not juego_iniciado:
@@ -893,6 +1276,9 @@ def crear_ventana_juego(ventana_principal):
             celda.insert(0, valor_anterior)
         celda.configure(state="readonly")
     
+    #E:ninguna
+    #S:None
+    #Funcion:Rehace la última jugada deshecha
     def rehacer_jugada():
         nonlocal juego_iniciado
         if not juego_iniciado:
@@ -922,6 +1308,10 @@ def crear_ventana_juego(ventana_principal):
         if verificar_finalizacion():
             finalizar_juego()
     
+    #E:int fila - Fila de la celda
+    #E:int columna - Columna de la celda
+    #S:None
+    #Funcion:Coloca el elemento seleccionado en la celda del tablero
     def colocar_elemento(fila, columna):
         nonlocal elemento_seleccionado, boton_seleccionado, juego_iniciado
         
@@ -954,6 +1344,9 @@ def crear_ventana_juego(ventana_principal):
         else:
             reanudar_temporizador()
     
+    #E:ninguna
+    #S:None
+    #Funcion:Borra el juego actual y lo reinicia al estado inicial
     def borrar_juego():
         nonlocal juego_iniciado, pila_jugadas_realizadas, pila_jugadas_eliminadas, tiempo_transcurrido, tiempo_restante, tipo_reloj, timer_se_convirtio_a_cronometro, tiempo_acumulado_al_convertir
         
@@ -993,6 +1386,9 @@ def crear_ventana_juego(ventana_principal):
             tiempo_acumulado_al_convertir = 0
         actualizar_temporizador_display()
     
+    #E:ninguna
+    #S:None
+    #Funcion:Termina el juego actual y vuelve a crear una nueva partida
     def terminar_juego():
         nonlocal juego_iniciado
         
@@ -1005,8 +1401,11 @@ def crear_ventana_juego(ventana_principal):
             return
         
         ventana_juego.destroy()
-        crear_ventana_juego(ventana_principal)
+        crear_ventana_juego(ventana_principal, usuario)
     
+    #E:ninguna
+    #S:None
+    #Funcion:Genera y muestra el TOP X de mejores tiempos
     def top_x():
         pausar_temporizador()
         ventana_juego.withdraw()
@@ -1019,6 +1418,10 @@ def crear_ventana_juego(ventana_principal):
         ventana_juego.deiconify()
         reanudar_temporizador()
     
+    #E:str elemento - Elemento seleccionado
+    #E:tk.Button boton - Botón que fue presionado
+    #S:None
+    #Funcion:Selecciona un elemento para colocar en el tablero
     def seleccionar_elemento(elemento, boton):
         nonlocal elemento_seleccionado, boton_seleccionado
         if boton_seleccionado:
@@ -1027,14 +1430,13 @@ def crear_ventana_juego(ventana_principal):
         boton_seleccionado = boton
         boton_seleccionado.configure(bg="lightgreen")
     
+    #E:ninguna
+    #S:None
+    #Funcion:Inicia el juego con el nombre del usuario autenticado
     def iniciar_juego():
         nonlocal juego_iniciado, fecha_hora_inicio, nombre_jugador, tiempo_restante, tipo_reloj, tiempo_inicial_segundos, pila_jugadas_realizadas, pila_jugadas_eliminadas, tiempo_transcurrido, timer_se_convirtio_a_cronometro, tiempo_acumulado_al_convertir
         
-        nombre_jugador = entrada_nombre_jugador.get().strip()
-        if len(nombre_jugador) < 1 or len(nombre_jugador) > 30:
-            mostrar_error_general_simple("El nombre del jugador debe tener entre 1 y 30 caracteres")
-            return
-        
+        #El nombre ya está tomado del usuario autenticado
         if nombre_existe_en_bitacora(nombre_jugador):
             respuesta = mostrar_error_general_simple(f"El nombre '{nombre_jugador}' ya existe en el TOP. ¿Desea usarlo?", "Nombre existente", yesno=True)
             if not respuesta:
@@ -1046,7 +1448,7 @@ def crear_ventana_juego(ventana_principal):
                 minutos_timer = int(entrada_timer_minutos.get())
                 segundos_timer = int(entrada_timer_segundos.get())
                 if horas_timer < 0 or horas_timer > 4 or minutos_timer < 0 or minutos_timer > 59 or segundos_timer < 0 or segundos_timer > 59:
-                    mostrar_error_general_simple("Valores de timer invalidos")
+                    mostrar_error_general_simple("Valores de timer inválidos")
                     return
                 if horas_timer == 0 and minutos_timer == 0 and segundos_timer == 0:
                     mostrar_error_general_simple("El timer debe tener al menos un valor mayor a cero")
@@ -1055,7 +1457,7 @@ def crear_ventana_juego(ventana_principal):
                 tiempo_restante = tiempo_inicial_segundos
                 actualizar_temporizador_display()
             except ValueError:
-                mostrar_error_general_simple("Los valores del timer deben ser numeros enteros")
+                mostrar_error_general_simple("Los valores del timer deben ser números enteros")
                 return
         
         timer_se_convirtio_a_cronometro = False
@@ -1067,7 +1469,6 @@ def crear_ventana_juego(ventana_principal):
         juego_iniciado = True
         fecha_hora_inicio = datetime.now()
         boton_iniciar_juego.config(state=tk.DISABLED)
-        entrada_nombre_jugador.config(state=tk.DISABLED)
         if tipo_reloj_actual == "timer":
             entrada_timer_horas.config(state=tk.DISABLED)
             entrada_timer_minutos.config(state=tk.DISABLED)
@@ -1075,6 +1476,9 @@ def crear_ventana_juego(ventana_principal):
         actualizar_temporizador_display()
         reanudar_temporizador()
     
+    #E:ninguna
+    #S:None
+    #Funcion:Maneja el cierre de la ventana de juego
     def on_cerrar_juego():
         pausar_temporizador()
         ventana_juego.destroy()
@@ -1082,7 +1486,7 @@ def crear_ventana_juego(ventana_principal):
     
     ventana_juego.protocol("WM_DELETE_WINDOW", on_cerrar_juego)
     
-    #interfaz grafica
+    #INTERFAZ GRÁFICA
     etiqueta_titulo = tk.Label(ventana_juego, text="S U D O K U", font=("Arial", 24, "bold"))
     etiqueta_titulo.pack(pady=10)
     
@@ -1103,20 +1507,26 @@ def crear_ventana_juego(ventana_principal):
     etiqueta_elementos_valor = tk.Label(frame_nivel_visible, text=elementos_texto, font=("Arial", 12), fg="green")
     etiqueta_elementos_valor.pack(side=tk.LEFT, padx=5)
     
+    #Mostrar el nombre del jugador autenticado
+    etiqueta_jugador_titulo = tk.Label(frame_nivel_visible, text="Jugador:", font=("Arial", 12, "bold"))
+    etiqueta_jugador_titulo.pack(side=tk.LEFT, padx=(20,5))
+    
+    etiqueta_jugador_valor = tk.Label(frame_nivel_visible, text=nombre_jugador, font=("Arial", 12), fg="purple")
+    etiqueta_jugador_valor.pack(side=tk.LEFT, padx=5)
+    
     frame_principal = tk.Frame(ventana_juego)
     frame_principal.pack(fill=tk.BOTH, expand=True, padx=20, pady=10)
     
     frame_columna_izquierda = tk.Frame(frame_principal)
     frame_columna_izquierda.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
     
+    #Ya no se necesita el campo de entrada de nombre de jugador
+    #Se reemplaza por una etiqueta que muestra el nombre del usuario autenticado
     frame_jugador = tk.Frame(frame_columna_izquierda)
     frame_jugador.pack(fill=tk.X, pady=(0,15))
     
-    etiqueta_jugador = tk.Label(frame_jugador, text="JUGADOR:", font=("Arial", 12, "bold"))
-    etiqueta_jugador.pack(side=tk.LEFT, padx=(0,10))
-    
-    entrada_nombre_jugador = tk.Entry(frame_jugador, width=30)
-    entrada_nombre_jugador.pack(side=tk.LEFT)
+    etiqueta_jugador_info = tk.Label(frame_jugador, text=f"Jugando como: {nombre_jugador}", font=("Arial", 12, "bold"), fg="purple")
+    etiqueta_jugador_info.pack(side=tk.LEFT, padx=(0,10))
     
     frame_contenedor_tablero = tk.Frame(frame_columna_izquierda)
     frame_contenedor_tablero.pack(pady=10)
@@ -1167,7 +1577,6 @@ def crear_ventana_juego(ventana_principal):
     frame_columna_derecha.pack(side=tk.RIGHT, fill=tk.Y, padx=(20,0))
     frame_columna_derecha.pack_propagate(False)
     
-    #scrollbar para la columna derecha
     canvas_derecha = tk.Canvas(frame_columna_derecha, width=250, height=600)
     scrollbar_derecha = tk.Scrollbar(frame_columna_derecha, orient="vertical", command=canvas_derecha.yview)
     frame_botones_scrollable = tk.Frame(canvas_derecha)
@@ -1179,12 +1588,10 @@ def crear_ventana_juego(ventana_principal):
     canvas_derecha.pack(side="left", fill="both", expand=True)
     scrollbar_derecha.pack(side="right", fill="y")
     
-    #boton INICIAR JUEGO
     boton_iniciar_juego = tk.Button(frame_botones_scrollable, text="INICIAR JUEGO", command=iniciar_juego, width=20, height=2)
     boton_iniciar_juego.pack(pady=10)
     lista_botones_accion.append(boton_iniciar_juego)
     
-    #frame temporizador
     if tipo_reloj_actual != "no_reloj":
         frame_temporizador = tk.LabelFrame(frame_botones_scrollable, text="TIEMPO", font=("Arial", 10, "bold"))
         frame_temporizador.pack(fill=tk.X, pady=10, padx=10)
@@ -1237,7 +1644,6 @@ def crear_ventana_juego(ventana_principal):
         entrada_timer_minutos = None
         entrada_timer_segundos = None
     
-    #botones de accion
     boton_guardar_juego = tk.Button(frame_botones_scrollable, text="GUARDAR JUEGO", command=guardar_juego, width=20, height=2)
     boton_guardar_juego.pack(pady=10)
     lista_botones_accion.append(boton_guardar_juego)
@@ -1268,15 +1674,18 @@ def crear_ventana_juego(ventana_principal):
     
     ventana_principal.withdraw()
 
-#E:tk.Tk ventana_principal - Ventana principal del menu
+#E:tk.Tk ventana_principal - Ventana principal del menú
 #S:None
-#Funcion:Crea y muestra la ventana de configuracion
+#Funcion:Crea y muestra la ventana de configuración
 def crear_ventana_configuracion(ventana_principal):
     ventana_configuracion = tk.Toplevel(ventana_principal)
-    ventana_configuracion.title("Sudoku - Configuracion")
+    ventana_configuracion.title("Sudoku - Configuración")
     ventana_configuracion.geometry("500x650")
     ventana_configuracion.resizable(False, False)
     
+    #E:ninguna
+    #S:None
+    #Funcion:Cierra la ventana de configuración y muestra la principal
     def on_cerrar_configuracion():
         ventana_configuracion.destroy()
         ventana_principal.deiconify()
@@ -1294,7 +1703,7 @@ def crear_ventana_configuracion(ventana_principal):
     canvas_configuracion.pack(side="left", fill="both", expand=True)
     scrollbar_vertical.pack(side="right", fill="y")
     
-    etiqueta_titulo = tk.Label(frame_scrollable, text="CONFIGURACION", font=("Arial", 18, "bold"))
+    etiqueta_titulo = tk.Label(frame_scrollable, text="CONFIGURACIÓN", font=("Arial", 18, "bold"))
     etiqueta_titulo.pack(pady=10)
     
     frame_nivel = tk.LabelFrame(frame_scrollable, text="NIVEL", font=("Arial", 12, "bold"))
@@ -1302,19 +1711,18 @@ def crear_ventana_configuracion(ventana_principal):
     
     directorio_script = obtener_directorio_script()
     archivo_config = os.path.join(directorio_script, "sudoku2026configuracion.json")
-    archivo = open(archivo_config, "r")
-    config_actual = json.load(archivo)
-    archivo.close()
+    with open(archivo_config, "r") as archivo:
+        config_actual = json.load(archivo)
     
     variable_nivel = tk.StringVar(value=config_actual.get("nivel", "facil"))
     
-    opcion_facil = tk.Radiobutton(frame_nivel, text="Facil", variable=variable_nivel, value="facil")
+    opcion_facil = tk.Radiobutton(frame_nivel, text="Fácil", variable=variable_nivel, value="facil")
     opcion_facil.pack(anchor=tk.W, padx=20, pady=5)
     
     opcion_intermedio = tk.Radiobutton(frame_nivel, text="Intermedio", variable=variable_nivel, value="intermedio")
     opcion_intermedio.pack(anchor=tk.W, padx=20, pady=5)
     
-    opcion_dificil = tk.Radiobutton(frame_nivel, text="Dificil", variable=variable_nivel, value="dificil")
+    opcion_dificil = tk.Radiobutton(frame_nivel, text="Difícil", variable=variable_nivel, value="dificil")
     opcion_dificil.pack(anchor=tk.W, padx=20, pady=5)
     
     frame_reloj = tk.LabelFrame(frame_scrollable, text="RELOJ", font=("Arial", 12, "bold"))
@@ -1322,7 +1730,7 @@ def crear_ventana_configuracion(ventana_principal):
     
     variable_reloj = tk.StringVar(value=config_actual.get("reloj", "cronometro"))
     
-    opcion_cronometro = tk.Radiobutton(frame_reloj, text="Cronometro", variable=variable_reloj, value="cronometro")
+    opcion_cronometro = tk.Radiobutton(frame_reloj, text="Cronómetro", variable=variable_reloj, value="cronometro")
     opcion_cronometro.pack(anchor=tk.W, padx=20, pady=5)
     
     opcion_timer = tk.Radiobutton(frame_reloj, text="Timer", variable=variable_reloj, value="timer")
@@ -1385,7 +1793,7 @@ def crear_ventana_configuracion(ventana_principal):
     frame_tabla_equivalencias = tk.Frame(frame_elementos)
     frame_tabla_equivalencias.pack(pady=10)
     
-    etiqueta_numeros = tk.Label(frame_tabla_equivalencias, text="Numeros", font=("Arial", 10, "bold"))
+    etiqueta_numeros = tk.Label(frame_tabla_equivalencias, text="Números", font=("Arial", 10, "bold"))
     etiqueta_numeros.grid(row=0, column=0, padx=20)
     
     etiqueta_letras = tk.Label(frame_tabla_equivalencias, text="Letras", font=("Arial", 10, "bold"))
@@ -1399,7 +1807,7 @@ def crear_ventana_configuracion(ventana_principal):
         etiqueta_letra = tk.Label(frame_tabla_equivalencias, text=letra_correspondiente)
         etiqueta_letra.grid(row=indice_equivalencia, column=1, padx=20)
     
-    opcion_numeros = tk.Radiobutton(frame_elementos, text="Usar Numeros (1-9)", variable=variable_elementos, value="numeros")
+    opcion_numeros = tk.Radiobutton(frame_elementos, text="Usar Números (1-9)", variable=variable_elementos, value="numeros")
     opcion_numeros.pack(anchor=tk.W, padx=20, pady=5)
     
     opcion_letras = tk.Radiobutton(frame_elementos, text="Usar Letras (A-I)", variable=variable_elementos, value="letras")
@@ -1408,6 +1816,9 @@ def crear_ventana_configuracion(ventana_principal):
     frame_botones = tk.Frame(frame_scrollable)
     frame_botones.pack(pady=20)
     
+    #E:ninguna
+    #S:None
+    #Funcion:Guarda la configuración en el archivo JSON
     def guardar_configuracion():
         nivel_seleccionado = variable_nivel.get()
         reloj_seleccionado = variable_reloj.get()
@@ -1419,7 +1830,7 @@ def crear_ventana_configuracion(ventana_principal):
                 messagebox.showerror("Error", "TOP X debe ser un entero entre 0 y 10")
                 return
         except ValueError:
-            messagebox.showerror("Error", "TOP X debe ser un numero entero")
+            messagebox.showerror("Error", "TOP X debe ser un número entero")
             return
         
         if reloj_seleccionado == "timer":
@@ -1441,7 +1852,7 @@ def crear_ventana_configuracion(ventana_principal):
                     messagebox.showerror("Error", "El timer debe tener al menos un valor mayor a cero")
                     return
             except ValueError:
-                messagebox.showerror("Error", "Horas, minutos y segundos deben ser numeros enteros")
+                messagebox.showerror("Error", "Horas, minutos y segundos deben ser números enteros")
                 return
         
         datos_configuracion = {
@@ -1460,14 +1871,16 @@ def crear_ventana_configuracion(ventana_principal):
         
         directorio_script = obtener_directorio_script()
         nombre_archivo = os.path.join(directorio_script, "sudoku2026configuracion.json")
-        archivo = open(nombre_archivo, "w")
-        json.dump(datos_configuracion, archivo, indent=4)
-        archivo.close()
+        with open(nombre_archivo, "w") as archivo:
+            json.dump(datos_configuracion, archivo, indent=4)
         
-        messagebox.showinfo("Exito", "Configuracion guardada.")
+        messagebox.showinfo("Éxito", "Configuración guardada.")
         ventana_configuracion.destroy()
         ventana_principal.deiconify()
     
+    #E:ninguna
+    #S:None
+    #Funcion:Cancela la configuración y cierra la ventana
     def cancelar_configuracion():
         ventana_configuracion.destroy()
         ventana_principal.deiconify()
@@ -1480,27 +1893,52 @@ def crear_ventana_configuracion(ventana_principal):
     
     ventana_principal.withdraw()
 
-#E:ninguna
-#S:ventana_principal(tk.Tk)
-#Funcion:Crea la ventana principal del menu
-def crear_ventana_principal():
+#E:dict usuario - Diccionario con datos del usuario autenticado
+#S:tk.Tk - Ventana principal del menú
+#Funcion:Crea la ventana principal del menú con el nombre del usuario autenticado
+def crear_ventana_principal(usuario):
     ventana_principal = tk.Tk()
     ventana_principal.title("Sudoku")
-    ventana_principal.geometry("400x300")
+    ventana_principal.geometry("400x350")
     ventana_principal.resizable(False, False)
     
-    def accion_boton_jugar():
-        crear_ventana_juego(ventana_principal)
+    #Mostrar nombre del usuario autenticado
+    frame_usuario = tk.Frame(ventana_principal)
+    frame_usuario.pack(pady=10)
     
+    label_usuario = tk.Label(frame_usuario, text=f"Usuario: {usuario['nombre']}", font=("Arial", 12, "bold"), fg="purple")
+    label_usuario.pack()
+    
+    label_correo = tk.Label(frame_usuario, text=f"Correo: {usuario['correo']}", font=("Arial", 10), fg="gray")
+    label_correo.pack()
+    
+    #E:ninguna
+    #S:None
+    #Funcion:Abre la ventana de juego con el usuario autenticado
+    def accion_boton_jugar():
+        crear_ventana_juego(ventana_principal, usuario)
+    
+    #E:ninguna
+    #S:None
+    #Funcion:Abre la ventana de configuración
     def accion_boton_configurar():
         crear_ventana_configuracion(ventana_principal)
     
+    #E:ninguna
+    #S:None
+    #Funcion:Muestra la ventana "Acerca de"
     def accion_boton_acerca_de():
         mostrar_acerca_de()
     
+    #E:ninguna
+    #S:None
+    #Funcion:Abre el manual de usuario en PDF
     def accion_boton_ayuda():
         abrir_manual_usuario()
     
+    #E:ninguna
+    #S:None
+    #Funcion:Cierra la aplicación
     def accion_boton_salir():
         ventana_principal.destroy()
     
@@ -1522,13 +1960,51 @@ def crear_ventana_principal():
     return ventana_principal
 
 #E:ninguna
-#S:ninguna
-#Funcion:Main
+#S:None
+#Funcion:Muestra la ventana de login y maneja el flujo principal de la aplicación
 def main():
-    crear_archivo_partidas_si_no_existe()
+    #Eliminar función de crear archivo de partidas ya que ahora se generan automáticamente
+    #No se usa sudoku2026partidas.json
+    
+    #Resetear configuración si no existe
     resetear_configuracion_a_default()
-    ventana_principal = crear_ventana_principal()
-    ventana_principal.mainloop()
+    
+    #Mostrar ventana de login
+    mostrar_ventana_login()
+    tk.mainloop()
+
+#E:ninguna
+#S:dict - Configuración por defecto
+#Funcion:Resetea el archivo de configuración a los valores por defecto
+def resetear_configuracion_a_default():
+    directorio_script = obtener_directorio_script()
+    archivo_config = os.path.join(directorio_script, "sudoku2026configuracion.json")
+    
+    configuracion_default = {
+        "nivel": "facil",
+        "reloj": "cronometro",
+        "top_x": 0,
+        "elementos": "numeros"
+    }
+    
+    #Solo crear si no existe
+    if not os.path.exists(archivo_config):
+        with open(archivo_config, "w") as archivo:
+            json.dump(configuracion_default, archivo, indent=4)
+    
+    return configuracion_default
+
+#E:ninguna
+#S:None
+#Funcion:Abre el manual de usuario en formato PDF
+def abrir_manual_usuario():
+    directorio_script = obtener_directorio_script()
+    nombre_manual = os.path.join(directorio_script, "manual_de_usuario_sudoku.pdf")
+    
+    if os.path.exists(nombre_manual):
+        webbrowser.open(nombre_manual)
+    else:
+        messagebox.showerror("Error", f"No se encuentra el archivo del manual de usuario.\n\nSe esperaba en: {nombre_manual}")
 
 if __name__ == "__main__":
     main()
