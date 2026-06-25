@@ -1,1 +1,44 @@
-[]
+[
+    {
+        "id": 1,
+        "correo": "gonzalot4e@gmail.com",
+        "codigo_ingreso": "a395069b5467ba24abcb7ba3567fe1a1184dd4b18bde3fff079e57c7581aa221",
+        "nombre": "",
+        "fecha_creacion": "2026-06-24T13:24:44.924406"
+    },
+    {
+        "id": 2,
+        "correo": "gndfoo@gmail.com",
+        "codigo_ingreso": "0774681629e6e3d0adc33790f8173b98facc4f2f1b46eff7d3f542757c0119fa",
+        "nombre": "",
+        "fecha_creacion": "2026-06-24T13:28:31.608699"
+    },
+    {
+        "id": 3,
+        "correo": "jorge@gmail.com",
+        "codigo_ingreso": "0344ed18df575307eb0ef61c202609e5590222fb7903fb8a9f48ba154ede02cd",
+        "nombre": "jorgito",
+        "fecha_creacion": "2026-06-24T13:34:43.348977"
+    },
+    {
+        "id": 4,
+        "correo": "jorg@gmail.com",
+        "codigo_ingreso": "eb4a129685be4168244f75b3468597d3f01d2b7d0d557ea65824eeb52337df29",
+        "nombre": "matias",
+        "fecha_creacion": "2026-06-24T14:28:08.840313"
+    },
+    {
+        "id": 5,
+        "correo": "alexa@gmail.com",
+        "codigo_ingreso": "d8a9b45a33872aeeae76cd60677f21a86475b7a004d1d488f22e5c933a19de52",
+        "nombre": "roberto",
+        "fecha_creacion": "2026-06-24T20:44:56.704169"
+    },
+    {
+        "id": 6,
+        "correo": "fabi@gmail.com",
+        "codigo_ingreso": "c30c8871d8225b73e5be7f87d044b01b12c8684c88caa0bf17382f80f80d4a87",
+        "nombre": "",
+        "fecha_creacion": "2026-06-24T20:55:15.234764"
+    }
+]

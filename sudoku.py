@@ -6,10 +6,8 @@ import random
 from datetime import datetime
 import webbrowser
 import hashlib
-import smtplib
-from email.mime.text import MIMEText
-from email.mime.multipart import MIMEMultipart
 import re
+import sys
 
 #intentar importar reportlab
 try:
@@ -23,15 +21,6 @@ try:
 except ImportError:
     REPORTLAB_DISPONIBLE = False
     print("ADVERTENCIA: reportlab no está instalado. Instálelo con: pip install reportlab")
-
-#====================CONFIGURACION DE CORREO====================
-#CONFIGURACION PARA ENVIAR CORREOS (DEBES CONFIGURAR CON TUS DATOS)
-CONFIG_CORREO = {
-    "servidor": "smtp.gmail.com",
-    "puerto": 587,
-    "usuario": "tu_correo@gmail.com",  #CAMBIAR
-    "contraseña": "tu_contraseña_app"  #CAMBIAR (usar contraseña de aplicación)
-}
 
 #====================FUNCIONES DE USUARIOS====================
 
@@ -94,40 +83,6 @@ def generar_codigo_ingreso():
 def hashear_codigo(codigo):
     return hashlib.sha256(codigo.encode()).hexdigest()
 
-#E:str destino - Correo electrónico del destinatario
-#E:str codigo - Código de 6 dígitos a enviar
-#S:bool - True si el correo se envió correctamente, False en caso contrario
-#Funcion:Envía el código de ingreso por correo electrónico usando SMTP
-def enviar_codigo_por_correo(destino, codigo):
-    try:
-        mensaje = MIMEMultipart()
-        mensaje["From"] = CONFIG_CORREO["usuario"]
-        mensaje["To"] = destino
-        mensaje["Subject"] = "Código de ingreso - Sudoku 2026"
-        
-        cuerpo = f"""
-        Hola,
-        
-        Tu código de ingreso a Sudoku 2026 es: {codigo}
-        
-        Este código es válido solo para esta sesión.
-        
-        ¡Disfruta del juego!
-        """
-        
-        mensaje.attach(MIMEText(cuerpo, "plain"))
-        
-        servidor = smtplib.SMTP(CONFIG_CORREO["servidor"], CONFIG_CORREO["puerto"])
-        servidor.starttls()
-        servidor.login(CONFIG_CORREO["usuario"], CONFIG_CORREO["contraseña"])
-        servidor.send_message(mensaje)
-        servidor.quit()
-        
-        return True
-    except Exception as e:
-        print(f"Error al enviar correo: {e}")
-        return False
-
 #E:list usuarios - Lista de usuarios existentes
 #S:int - Siguiente ID disponible
 #Funcion:Obtiene el siguiente ID disponible incrementando el máximo actual en 1
@@ -151,24 +106,20 @@ def usuario_existe_por_nombre(usuarios, nombre):
     return any(u["nombre"].lower() == nombre.lower() for u in usuarios)
 
 #E:str correo - Correo del nuevo usuario
-#E:str nombre - Nombre del nuevo usuario
 #E:str codigo - Código de ingreso inicial
 #S:tuple - (dict usuario_creado o None, str mensaje)
-#Funcion:Crea un nuevo usuario validando que correo y nombre no existan
-def crear_usuario(correo, nombre, codigo):
+#Funcion:Crea un nuevo usuario con correo y código (sin nombre aún)
+def crear_usuario_sin_nombre(correo, codigo):
     usuarios = cargar_usuarios()
     
     if usuario_existe_por_correo(usuarios, correo):
         return None, "El correo ya está registrado"
     
-    if usuario_existe_por_nombre(usuarios, nombre):
-        return None, "El nombre ya está registrado"
-    
     nuevo_usuario = {
         "id": obtener_siguiente_id(usuarios),
         "correo": correo.lower(),
         "codigo_ingreso": hashear_codigo(codigo),
-        "nombre": nombre,
+        "nombre": "",
         "fecha_creacion": datetime.now().isoformat()
     }
     
@@ -187,15 +138,15 @@ def obtener_usuario_por_correo(correo):
             return usuario
     return None
 
-#E:str correo - Correo del usuario a actualizar
-#E:str nuevo_codigo - Nuevo código de ingreso
+#E:str correo - Correo del usuario
+#E:str nombre - Nuevo nombre a asignar
 #S:bool - True si se actualizó correctamente, False en caso contrario
-#Funcion:Actualiza el código de ingreso de un usuario en el archivo
-def actualizar_codigo_ingreso(correo, nuevo_codigo):
+#Funcion:Actualiza el nombre de un usuario (se guarda inmediatamente al ingresarlo)
+def actualizar_nombre_usuario(correo, nombre):
     usuarios = cargar_usuarios()
     for usuario in usuarios:
         if usuario["correo"].lower() == correo.lower():
-            usuario["codigo_ingreso"] = hashear_codigo(nuevo_codigo)
+            usuario["nombre"] = nombre
             guardar_usuarios(usuarios)
             return True
     return False
@@ -209,24 +160,18 @@ def generar_sudoku_valido():
     tablero = [[0 for _ in range(9)] for _ in range(9)]
     
     def es_valido(tablero, fila, columna, numero):
-        #Verificar fila
         for c in range(9):
             if tablero[fila][c] == numero:
                 return False
-        
-        #Verificar columna
         for r in range(9):
             if tablero[r][columna] == numero:
                 return False
-        
-        #Verificar cuadrante 3x3
         caja_fila = (fila // 3) * 3
         caja_columna = (columna // 3) * 3
         for r in range(caja_fila, caja_fila + 3):
             for c in range(caja_columna, caja_columna + 3):
                 if tablero[r][c] == numero:
                     return False
-        
         return True
     
     def resolver(tablero):
@@ -355,7 +300,6 @@ def generar_partida_unica(nivel):
         
         intentos += 1
     
-    #Si no se encuentra una única, permitir repetición
     tablero_juego, tablero_solucion = generar_partida_sudoku(nivel)
     return tablero_juego, tablero_solucion
 
@@ -379,21 +323,21 @@ def mostrar_ventana_login():
     frame_principal.pack(fill=tk.BOTH, expand=True)
     
     titulo = tk.Label(frame_principal, text="SUDOKU 2026", font=("Arial", 20, "bold"))
-    titulo.pack(pady=(0, 20))
+    titulo.pack(pady=(0, 10))
     
-    subtitulo = tk.Label(frame_principal, text="Inicio de Sesión", font=("Arial", 14))
+    subtitulo = tk.Label(frame_principal, text="Inicio de Sesion", font=("Arial", 14))
     subtitulo.pack(pady=(0, 20))
     
     frame_entrada = tk.Frame(frame_principal)
     frame_entrada.pack(fill=tk.X, pady=10)
     
-    label_correo = tk.Label(frame_entrada, text="Correo electrónico:", font=("Arial", 10))
+    label_correo = tk.Label(frame_entrada, text="Correo electronico:", font=("Arial", 10))
     label_correo.pack(anchor=tk.W, pady=(0, 5))
     
     entrada_correo = tk.Entry(frame_entrada, font=("Arial", 12), width=40)
-    entrada_correo.pack(fill=tk.X, pady=(0, 15))
+    entrada_correo.pack(fill=tk.X, pady=(0, 10))
     
-    label_codigo = tk.Label(frame_entrada, text="Código de ingreso (6 dígitos):", font=("Arial", 10))
+    label_codigo = tk.Label(frame_entrada, text="Codigo de ingreso (6 digitos):", font=("Arial", 10))
     label_codigo.pack(anchor=tk.W, pady=(0, 5))
     
     entrada_codigo = tk.Entry(frame_entrada, font=("Arial", 12), width=40, show="*")
@@ -404,146 +348,117 @@ def mostrar_ventana_login():
     
     #E:ninguna
     #S:None
-    #Funcion:Envía un código de ingreso al correo ingresado, crea usuario si no existe
-    def enviar_codigo():
-        correo = entrada_correo.get().strip()
-        
-        if not correo:
-            label_estado.config(text="Por favor, ingrese un correo electrónico", fg="red")
-            return
-        
-        if not validar_correo(correo):
-            label_estado.config(text="El formato del correo no es válido", fg="red")
-            return
-        
-        usuario = obtener_usuario_por_correo(correo)
-        
-        if not usuario:
-            respuesta = messagebox.askyesno(
-                "Usuario no registrado",
-                f"El correo '{correo}' no está registrado.\n\n¿Desea crear un nuevo usuario?"
-            )
-            if respuesta:
-                ventana_login.withdraw()
-                ventana_nombre = tk.Toplevel(ventana_login)
-                ventana_nombre.title("Crear Usuario")
-                ventana_nombre.geometry("400x250")
-                ventana_nombre.resizable(False, False)
-                ventana_nombre.transient(ventana_login)
-                ventana_nombre.grab_set()
-                
-                ventana_nombre.update_idletasks()
-                x = (ventana_nombre.winfo_screenwidth() // 2) - (400 // 2)
-                y = (ventana_nombre.winfo_screenheight() // 2) - (250 // 2)
-                ventana_nombre.geometry(f"+{x}+{y}")
-                
-                frame_nombre = tk.Frame(ventana_nombre, padx=30, pady=30)
-                frame_nombre.pack(fill=tk.BOTH, expand=True)
-                
-                label_nombre = tk.Label(frame_nombre, text="Nombre de usuario:", font=("Arial", 12))
-                label_nombre.pack(anchor=tk.W, pady=(0, 5))
-                
-                entrada_nombre = tk.Entry(frame_nombre, font=("Arial", 12), width=30)
-                entrada_nombre.pack(fill=tk.X, pady=(0, 20))
-                
-                label_nombre_info = tk.Label(frame_nombre, text="1-30 caracteres (letras, números y espacios)", font=("Arial", 9), fg="gray")
-                label_nombre_info.pack(anchor=tk.W, pady=(0, 10))
-                
-                label_estado_nombre = tk.Label(frame_nombre, text="", font=("Arial", 9), fg="red")
-                label_estado_nombre.pack(pady=(0, 10))
-                
-                #E:ninguna
-                #S:None
-                #Funcion:Crea un nuevo usuario con el nombre ingresado y envía código por correo
-                def crear_nuevo_usuario():
-                    nombre = entrada_nombre.get().strip()
-                    
-                    if not validar_nombre(nombre):
-                        label_estado_nombre.config(text="El nombre debe tener 1-30 caracteres (letras, números y espacios)")
-                        return
-                    
-                    if usuario_existe_por_nombre(cargar_usuarios(), nombre):
-                        label_estado_nombre.config(text="El nombre ya está registrado")
-                        return
-                    
-                    codigo = generar_codigo_ingreso()
-                    usuario_nuevo, mensaje = crear_usuario(correo, nombre, codigo)
-                    
-                    if usuario_nuevo:
-                        if enviar_codigo_por_correo(correo, codigo):
-                            label_estado_nombre.config(text="Usuario creado. Se ha enviado un código a tu correo", fg="green")
-                            ventana_nombre.destroy()
-                            ventana_login.deiconify()
-                            label_estado.config(text="Código enviado a tu correo", fg="green")
-                            entrada_codigo.focus()
-                        else:
-                            label_estado_nombre.config(text="Error al enviar el correo. Intente nuevamente", fg="red")
-                    else:
-                        label_estado_nombre.config(text=mensaje, fg="red")
-                
-                boton_crear = tk.Button(frame_nombre, text="CREAR USUARIO", command=crear_nuevo_usuario, width=20, height=2)
-                boton_crear.pack(pady=10)
-                
-                boton_cancelar = tk.Button(frame_nombre, text="CANCELAR", command=lambda: [ventana_nombre.destroy(), ventana_login.deiconify()], width=20)
-                boton_cancelar.pack()
-                
-            return
-        
-        #Usuario existe, enviar código
-        codigo = generar_codigo_ingreso()
-        if actualizar_codigo_ingreso(correo, codigo):
-            if enviar_codigo_por_correo(correo, codigo):
-                label_estado.config(text="Código enviado a tu correo", fg="green")
-                entrada_codigo.focus()
-            else:
-                label_estado.config(text="Error al enviar el correo. Intente nuevamente", fg="red")
-        else:
-            label_estado.config(text="Error al actualizar el código", fg="red")
-    
-    #E:ninguna
-    #S:None
-    #Funcion:Verifica el código de ingreso ingresado y autentica al usuario
-    def verificar_ingreso():
+    #Funcion:Maneja el proceso completo de ingreso (verifica correo y valida código)
+    def manejar_ingreso():
         correo = entrada_correo.get().strip()
         codigo = entrada_codigo.get().strip()
         
+        #Paso 1: Verificar que el correo no este vacio
         if not correo:
-            label_estado.config(text="Ingrese el correo electrónico", fg="red")
+            label_estado.config(text="Debe ingresar un correo electronico", fg="red")
+            entrada_correo.focus()
             return
         
+        #Paso 2: Validar formato del correo
+        if not validar_correo(correo):
+            label_estado.config(text="El formato del correo no es valido", fg="red")
+            entrada_correo.delete(0, tk.END)
+            entrada_correo.focus()
+            return
+        
+        #Paso 3: Verificar si el correo existe
+        usuario = obtener_usuario_por_correo(correo)
+        
+        if not usuario:
+            #Paso 4: Correo no existe - preguntar si agregar usuario
+            respuesta = messagebox.askyesno(
+                "Usuario no registrado",
+                f"El correo '{correo}' no esta registrado.\n\n¿Desea crear un nuevo usuario?"
+            )
+            if respuesta:
+                #Crear usuario sin nombre con código nuevo
+                codigo_nuevo = generar_codigo_ingreso()
+                usuario_nuevo, mensaje = crear_usuario_sin_nombre(correo, codigo_nuevo)
+                
+                if usuario_nuevo:
+                    #MOSTRAR EL CODIGO EN PANTALLA
+                    messagebox.showinfo(
+                        "Usuario creado",
+                        f"Usuario creado exitosamente para: {correo}\n\n"
+                        f"Su codigo de ingreso es: {codigo_nuevo}\n\n"
+                        f"Guarde este codigo para ingresar al sistema."
+                    )
+                    label_estado.config(text="Usuario creado. Ingrese su codigo de 6 digitos", fg="green")
+                    entrada_codigo.delete(0, tk.END)
+                    entrada_codigo.focus()
+                else:
+                    label_estado.config(text=mensaje, fg="red")
+                    entrada_correo.delete(0, tk.END)
+                    entrada_correo.focus()
+            else:
+                entrada_correo.delete(0, tk.END)
+                entrada_correo.focus()
+                label_estado.config(text="", fg="red")
+            return
+        
+        #Paso 5: El correo existe - validar codigo ingresado
         if not codigo:
-            label_estado.config(text="Ingrese el código de ingreso", fg="red")
+            label_estado.config(text="Ingrese el codigo de ingreso", fg="red")
+            entrada_codigo.focus()
             return
         
         if len(codigo) != 6 or not codigo.isdigit():
-            label_estado.config(text="El código debe tener 6 dígitos", fg="red")
+            label_estado.config(text="El codigo debe tener 6 digitos", fg="red")
+            entrada_codigo.delete(0, tk.END)
+            entrada_codigo.focus()
             return
         
-        usuario = obtener_usuario_por_correo(correo)
-        if not usuario:
+        #Paso 6: Verificar codigo contra el hash almacenado
+        usuario_verificar = obtener_usuario_por_correo(correo)
+        if not usuario_verificar:
             label_estado.config(text="Correo no registrado", fg="red")
+            entrada_correo.delete(0, tk.END)
+            entrada_correo.focus()
             return
         
         codigo_hash = hashear_codigo(codigo)
-        if usuario["codigo_ingreso"] == codigo_hash:
+        if usuario_verificar["codigo_ingreso"] == codigo_hash:
+            #Login exitoso
             ventana_login.destroy()
-            crear_ventana_principal(usuario)
+            crear_ventana_principal(usuario_verificar)
         else:
-            label_estado.config(text="Código incorrecto", fg="red")
+            label_estado.config(text="Codigo incorrecto. Intente nuevamente", fg="red")
             entrada_codigo.delete(0, tk.END)
             entrada_codigo.focus()
+    
+    #E:ninguna
+    #S:None
+    #Funcion:Limpia el estado cuando se cambia el correo
+    def limpiar_estado(event=None):
+        label_estado.config(text="")
+        entrada_codigo.delete(0, tk.END)
+    
+    #E:ninguna
+    #S:None
+    #Funcion:Cierra la ventana de login y termina la aplicacion
+    def cerrar_login():
+        ventana_login.destroy()
+        sys.exit(0)
     
     frame_botones = tk.Frame(frame_entrada)
     frame_botones.pack(fill=tk.X, pady=10)
     
-    boton_enviar_codigo = tk.Button(frame_botones, text="ENVIAR CÓDIGO", command=enviar_codigo, width=20, height=2)
-    boton_enviar_codigo.pack(side=tk.LEFT, padx=5)
+    boton_ingresar = tk.Button(frame_botones, text="INGRESAR", command=manejar_ingreso, width=20, height=2, bg="lightgreen")
+    boton_ingresar.pack(pady=5)
     
-    boton_ingresar = tk.Button(frame_botones, text="INGRESAR", command=verificar_ingreso, width=20, height=2, bg="lightgreen")
-    boton_ingresar.pack(side=tk.RIGHT, padx=5)
+    #Eventos
+    entrada_correo.bind("<Return>", lambda e: manejar_ingreso())
+    entrada_codigo.bind("<Return>", lambda e: manejar_ingreso())
+    entrada_correo.bind("<FocusIn>", limpiar_estado)
     
-    entrada_correo.bind("<Return>", lambda e: enviar_codigo())
-    entrada_codigo.bind("<Return>", lambda e: verificar_ingreso())
+    ventana_login.protocol("WM_DELETE_WINDOW", cerrar_login)
+    
+    entrada_correo.focus()
     
     return ventana_login
 
@@ -551,10 +466,10 @@ def mostrar_ventana_login():
 
 #E:str nombre_jugador - Nombre del jugador
 #E:str dificultad - Nivel de dificultad
-#E:int segundos - Tiempo en segundos que tardó
+#E:int segundos - Tiempo en segundos que tardo
 #E:str fecha_hora - Fecha y hora en formato ISO8601
 #S:None
-#Funcion:Guarda una partida completada en el archivo de bitácora
+#Funcion:Guarda una partida completada en el archivo de bitacora
 def guardar_partida_en_bitacora(nombre_jugador, dificultad, segundos, fecha_hora):
     directorio_script = obtener_directorio_script()
     nombre_archivo = os.path.join(directorio_script, "sudoku2026_bitacora_jugadas.json")
@@ -577,8 +492,8 @@ def guardar_partida_en_bitacora(nombre_jugador, dificultad, segundos, fecha_hora
         json.dump(datos_bitacora, archivo, indent=4)
 
 #E:str nombre - Nombre del jugador a verificar
-#S:bool - True si el nombre ya existe en la bitácora, False en caso contrario
-#Funcion:Verifica si un nombre de jugador ya existe en el archivo de bitácora
+#S:bool - True si el nombre ya existe en la bitacora, False en caso contrario
+#Funcion:Verifica si un nombre de jugador ya existe en el archivo de bitacora
 def nombre_existe_en_bitacora(nombre):
     directorio_script = obtener_directorio_script()
     archivo_bitacora = os.path.join(directorio_script, "sudoku2026_bitacora_jugadas.json")
@@ -620,7 +535,7 @@ def formatear_fecha(fecha_hora_iso):
     return fecha_hora_iso
 
 #E:ninguna
-#S:bool - True si se generó el TOP X, False en caso contrario
+#S:bool - True si se genero el TOP X, False en caso contrario
 #Funcion:Genera un archivo PDF o TXT con el TOP X de mejores tiempos
 def generar_top_x():
     directorio_script = obtener_directorio_script()
@@ -634,7 +549,7 @@ def generar_top_x():
             top_x = config.get("top_x", 0)
     
     if not os.path.exists(archivo_bitacora):
-        messagebox.showinfo("TOP X", "No hay partidas registradas en la bitácora.")
+        messagebox.showinfo("TOP X", "No hay partidas registradas en la bitacora.")
         return False
     
     with open(archivo_bitacora, "r") as archivo:
@@ -670,7 +585,7 @@ def generar_top_x():
             break
     
     if not hay_datos:
-        messagebox.showinfo("TOP X", "No hay partidas completadas en la bitácora.")
+        messagebox.showinfo("TOP X", "No hay partidas completadas en la bitacora.")
         return False
     
     if not REPORTLAB_DISPONIBLE:
@@ -686,9 +601,9 @@ def generar_top_x():
                 f.write("Mostrando todas las partidas registradas\n\n")
             
             nombres_nivel = {
-                "facil": "NIVEL FÁCIL",
+                "facil": "NIVEL FACIL",
                 "intermedio": "NIVEL INTERMEDIO",
-                "dificil": "NIVEL DIFÍCIL"
+                "dificil": "NIVEL DIFICIL"
             }
             
             for nivel, partidas in partidas_por_nivel.items():
@@ -741,9 +656,9 @@ def generar_top_x():
     elementos.append(Spacer(1, 0.3*inch))
     
     nombres_nivel = {
-        "facil": "NIVEL FÁCIL",
+        "facil": "NIVEL FACIL",
         "intermedio": "NIVEL INTERMEDIO",
-        "dificil": "NIVEL DIFÍCIL"
+        "dificil": "NIVEL DIFICIL"
     }
     
     for nivel, partidas in partidas_por_nivel.items():
@@ -781,7 +696,7 @@ def generar_top_x():
 
 #E:ninguna
 #S:None
-#Funcion:Muestra la ventana "Acerca de" con información del programa
+#Funcion:Muestra la ventana "Acerca de" con informacion del programa
 def mostrar_acerca_de():
     ventana_acerca = tk.Toplevel()
     ventana_acerca.title("Acerca de")
@@ -800,10 +715,10 @@ def mostrar_acerca_de():
     titulo = tk.Label(frame_principal, text="Juego Sudoku", font=("Arial", 16, "bold"))
     titulo.pack(pady=(0, 10))
     
-    version = tk.Label(frame_principal, text="Versión: 4.0", font=("Arial", 10))
+    version = tk.Label(frame_principal, text="Version: 4.0", font=("Arial", 10))
     version.pack()
     
-    fecha = tk.Label(frame_principal, text="Fecha de creación: 17 de mayo", font=("Arial", 10))
+    fecha = tk.Label(frame_principal, text="Fecha de creacion: 17 de mayo", font=("Arial", 10))
     fecha.pack()
     
     autor = tk.Label(frame_principal, text="Autor: Jorge William Chaves Osorio", font=("Arial", 10))
@@ -812,7 +727,7 @@ def mostrar_acerca_de():
     boton_cerrar = tk.Button(frame_principal, text="Cerrar", command=ventana_acerca.destroy, width=15)
     boton_cerrar.pack(pady=15)
 
-#E:tk.Tk ventana_principal - Ventana principal del menú
+#E:tk.Tk ventana_principal - Ventana principal del menu
 #E:dict usuario - Diccionario con datos del usuario autenticado
 #S:None
 #Funcion:Crea y muestra la ventana de juego con el usuario autenticado
@@ -829,10 +744,66 @@ def crear_ventana_juego(ventana_principal, usuario):
     tipo_reloj_actual = configuracion_actual.get("reloj", "cronometro")
     tiempo_inicial = configuracion_actual.get("tiempo_inicial", {"horas": 0, "minutos": 0, "segundos": 0})
     
-    #Generar partida en tiempo real en lugar de cargar del archivo
+    #Verificar si el usuario tiene nombre, si no, pedirlo
+    nombre_jugador = usuario.get("nombre", "")
+    
+    if not nombre_jugador:
+        #Primera vez que juega este usuario - pedir nombre
+        ventana_nombre = tk.Toplevel()
+        ventana_nombre.title("Nombre de usuario")
+        ventana_nombre.geometry("400x200")
+        ventana_nombre.resizable(False, False)
+        ventana_nombre.transient(ventana_principal)
+        ventana_nombre.grab_set()
+        
+        ventana_nombre.update_idletasks()
+        x = (ventana_nombre.winfo_screenwidth() // 2) - (400 // 2)
+        y = (ventana_nombre.winfo_screenheight() // 2) - (200 // 2)
+        ventana_nombre.geometry(f"+{x}+{y}")
+        
+        frame_nombre = tk.Frame(ventana_nombre, padx=30, pady=30)
+        frame_nombre.pack(fill=tk.BOTH, expand=True)
+        
+        label_info = tk.Label(frame_nombre, text="Ingresa tu nombre de usuario:", font=("Arial", 12))
+        label_info.pack(pady=(0, 10))
+        
+        entrada_nombre = tk.Entry(frame_nombre, font=("Arial", 12), width=30)
+        entrada_nombre.pack(pady=10)
+        
+        label_estado_nombre = tk.Label(frame_nombre, text="", font=("Arial", 9), fg="red")
+        label_estado_nombre.pack(pady=5)
+        
+        def guardar_nombre():
+            nombre = entrada_nombre.get().strip()
+            if not validar_nombre(nombre):
+                label_estado_nombre.config(text="El nombre debe tener 1-30 caracteres (letras, numeros y espacios)")
+                return
+            
+            if usuario_existe_por_nombre(cargar_usuarios(), nombre):
+                label_estado_nombre.config(text="El nombre ya esta registrado")
+                return
+            
+            #Guardar el nombre INMEDIATAMENTE en el archivo
+            if actualizar_nombre_usuario(usuario["correo"], nombre):
+                usuario["nombre"] = nombre
+                ventana_nombre.destroy()
+                #Recargar la ventana de juego con el nombre ya guardado
+                crear_ventana_juego(ventana_principal, usuario)
+            else:
+                label_estado_nombre.config(text="Error al guardar el nombre")
+        
+        boton_guardar_nombre = tk.Button(frame_nombre, text="GUARDAR", command=guardar_nombre, width=20, height=2)
+        boton_guardar_nombre.pack(pady=10)
+        
+        entrada_nombre.bind("<Return>", lambda e: guardar_nombre())
+        entrada_nombre.focus()
+        
+        ventana_principal.withdraw()
+        return
+    
+    #Si el usuario ya tiene nombre, continuar con el juego normal
     tablero_juego, tablero_solucion = generar_partida_unica(nivel_actual)
     
-    #Convertir tablero a diccionario para mantener compatibilidad con el código existente
     partida_cargada = {}
     for fila in range(9):
         for columna in range(9):
@@ -847,7 +818,6 @@ def crear_ventana_juego(ventana_principal, usuario):
     tiempo_transcurrido = 0
     temporizador_activo = None
     fecha_hora_inicio = None
-    nombre_jugador = usuario["nombre"]  #Tomar el nombre del usuario autenticado
     tipo_reloj = tipo_reloj_actual
     timer_se_convirtio_a_cronometro = False
     tiempo_acumulado_al_convertir = 0
@@ -863,9 +833,6 @@ def crear_ventana_juego(ventana_principal, usuario):
     lista_botones_accion = []
     lista_celdas_tablero = []
     
-    #E:str elemento - Elemento a convertir ("1"-"9" o "A"-"I")
-    #S:int - Número correspondiente (1-9) o 0 si está vacío
-    #Funcion:Convierte un elemento (número o letra) a su valor numérico
     def elemento_a_numero(elemento):
         if elemento == "":
             return 0
@@ -887,26 +854,17 @@ def crear_ventana_juego(ventana_principal, usuario):
     ventana_juego.geometry("950x800")
     ventana_juego.resizable(False, False)
     
-    #E:ninguna
-    #S:None
-    #Funcion:Pausa el temporizador cancelando la llamada pendiente
     def pausar_temporizador():
         nonlocal temporizador_activo
         if temporizador_activo:
             ventana_juego.after_cancel(temporizador_activo)
             temporizador_activo = None
     
-    #E:ninguna
-    #S:None
-    #Funcion:Reanuda el temporizador si el juego está iniciado y no hay temporizador activo
     def reanudar_temporizador():
         nonlocal temporizador_activo
         if juego_iniciado and temporizador_activo is None and tipo_reloj != "no_reloj":
             temporizador_activo = ventana_juego.after(1000, actualizar_temporizador)
     
-    #E:ninguna
-    #S:None
-    #Funcion:Actualiza las etiquetas del temporizador con el tiempo actual
     def actualizar_temporizador_display():
         if tipo_reloj == "no_reloj":
             return
@@ -925,9 +883,6 @@ def crear_ventana_juego(ventana_principal, usuario):
             etiqueta_minutos.config(text=f"Minutos: {minutos:02d}")
             etiqueta_segundos.config(text=f"Segundos: {segundos:02d}")
     
-    #E:ninguna
-    #S:None
-    #Funcion:Actualiza el temporizador cada segundo, incrementando o decrementando según el tipo
     def actualizar_temporizador():
         nonlocal tiempo_transcurrido, tiempo_restante, temporizador_activo, juego_iniciado, tipo_reloj, timer_se_convirtio_a_cronometro, tiempo_acumulado_al_convertir
         
@@ -959,9 +914,6 @@ def crear_ventana_juego(ventana_principal, usuario):
                     ventana_juego.destroy()
                     crear_ventana_juego(ventana_principal, usuario)
     
-    #E:ninguna
-    #S:bool - True si todas las celdas están llenas, False en caso contrario
-    #Funcion:Verifica si el tablero está completamente lleno
     def verificar_finalizacion():
         for fila in range(9):
             for columna in range(9):
@@ -969,9 +921,6 @@ def crear_ventana_juego(ventana_principal, usuario):
                     return False
         return True
     
-    #E:ninguna
-    #S:None
-    #Funcion:Finaliza el juego, guarda la partida en bitácora y cierra la ventana
     def finalizar_juego():
         nonlocal juego_iniciado
         
@@ -996,9 +945,6 @@ def crear_ventana_juego(ventana_principal, usuario):
         ventana_juego.destroy()
         crear_ventana_juego(ventana_principal, usuario)
     
-    #E:ninguna
-    #S:None
-    #Funcion:Guarda el estado actual del juego en un archivo JSON
     def guardar_juego():
         nonlocal juego_iniciado, nombre_jugador, nivel_actual, tipo_elementos, tipo_reloj_actual
         nonlocal tiempo_inicial_segundos, tiempo_transcurrido, tiempo_restante, tipo_reloj
@@ -1043,9 +989,6 @@ def crear_ventana_juego(ventana_principal, usuario):
         
         reanudar_temporizador()
     
-    #E:ninguna
-    #S:None
-    #Funcion:Carga un juego guardado desde el archivo JSON
     def cargar_juego():
         nonlocal partida_cargada, nombre_jugador, nivel_actual, tipo_elementos
         nonlocal tipo_reloj_actual, tiempo_inicial_segundos, tiempo_transcurrido, tiempo_restante
@@ -1057,7 +1000,7 @@ def crear_ventana_juego(ventana_principal, usuario):
             mostrar_error_general_simple("No se puede cargar un juego mientras hay una partida en curso. Termine o borre el juego actual primero.")
             return
         
-        nombre_temporal = nombre_jugador  #Usar el nombre del usuario autenticado
+        nombre_temporal = nombre_jugador
         
         if os.path.exists(archivo_partidas_guardadas):
             with open(archivo_partidas_guardadas, "r") as archivo:
@@ -1128,11 +1071,6 @@ def crear_ventana_juego(ventana_principal, usuario):
         else:
             mostrar_error_general_simple("No hay juegos guardados.")
     
-    #E:str mensaje - Mensaje a mostrar
-    #E:str titulo - Título de la ventana
-    #E:bool yesno - True si es pregunta de sí/no, False si es solo información
-    #S:bool o None - Respuesta del usuario si yesno=True, None si yesno=False
-    #Funcion:Muestra un mensaje en una ventana emergente, pausando el temporizador
     def mostrar_error_general_simple(mensaje, titulo="Error", yesno=False):
         pausar_temporizador()
         ventana_juego.withdraw()
@@ -1148,11 +1086,6 @@ def crear_ventana_juego(ventana_principal, usuario):
         
         return resultado
     
-    #E:str mensaje - Mensaje de error
-    #E:int fila_error - Fila donde ocurrió el error (opcional)
-    #E:int columna_error - Columna donde ocurrió el error (opcional)
-    #S:None
-    #Funcion:Muestra una ventana de error con un tablero que resalta la celda conflictiva
     def mostrar_ventana_error(mensaje, fila_error=None, columna_error=None):
         nonlocal juego_iniciado
         
@@ -1198,9 +1131,6 @@ def crear_ventana_juego(ventana_principal, usuario):
                                          bg=color_fondo, anchor="center")
                         celda.grid(row=celda_fila, column=celda_columna, padx=1, pady=1)
         
-        #E:ninguna
-        #S:None
-        #Funcion:Cierra la ventana de error y reanuda el juego
         def cerrar_ventana_error():
             ventana_error.destroy()
             nonlocal juego_iniciado
@@ -1214,11 +1144,6 @@ def crear_ventana_juego(ventana_principal, usuario):
         
         ventana_juego.wait_window(ventana_error)
     
-    #E:int fila - Fila de la celda
-    #E:int columna - Columna de la celda
-    #E:str elemento - Elemento a validar
-    #S:bool - True si la jugada es válida, False en caso contrario
-    #Funcion:Valida si una jugada es válida según las reglas del Sudoku
     def validar_jugada(fila, columna, elemento):
         if elemento == "":
             return True
@@ -1226,19 +1151,19 @@ def crear_ventana_juego(ventana_principal, usuario):
         numero_elemento = elemento_a_numero(elemento)
         
         if matriz_fijos[fila][columna]:
-            mostrar_ventana_error("JUGADA NO ES VÁLIDA PORQUE ESTE ES UN ELEMENTO FIJO", fila, columna)
+            mostrar_ventana_error("JUGADA NO ES VALIDA PORQUE ESTE ES UN ELEMENTO FIJO", fila, columna)
             return False
         
         for c in range(9):
             if c != columna and matriz_valores_actuales[fila][c] != "":
                 if elemento_a_numero(matriz_valores_actuales[fila][c]) == numero_elemento:
-                    mostrar_ventana_error("JUGADA NO ES VÁLIDA PORQUE EL ELEMENTO YA ESTÁ EN LA FILA", fila, c)
+                    mostrar_ventana_error("JUGADA NO ES VALIDA PORQUE EL ELEMENTO YA ESTA EN LA FILA", fila, c)
                     return False
         
         for r in range(9):
             if r != fila and matriz_valores_actuales[r][columna] != "":
                 if elemento_a_numero(matriz_valores_actuales[r][columna]) == numero_elemento:
-                    mostrar_ventana_error("JUGADA NO ES VÁLIDA PORQUE EL ELEMENTO YA ESTÁ EN LA COLUMNA", r, columna)
+                    mostrar_ventana_error("JUGADA NO ES VALIDA PORQUE EL ELEMENTO YA ESTA EN LA COLUMNA", r, columna)
                     return False
         
         caja_fila = fila // 3
@@ -1247,14 +1172,11 @@ def crear_ventana_juego(ventana_principal, usuario):
             for c in range(caja_columna * 3, caja_columna * 3 + 3):
                 if (r != fila or c != columna) and matriz_valores_actuales[r][c] != "":
                     if elemento_a_numero(matriz_valores_actuales[r][c]) == numero_elemento:
-                        mostrar_ventana_error("JUGADA NO ES VÁLIDA PORQUE EL ELEMENTO YA ESTÁ EN LA CUADRÍCULA", r, c)
+                        mostrar_ventana_error("JUGADA NO ES VALIDA PORQUE EL ELEMENTO YA ESTA EN LA CUADRÍCULA", r, c)
                         return False
         
         return True
     
-    #E:ninguna
-    #S:None
-    #Funcion:Deshace la última jugada realizada
     def deshacer_jugada():
         nonlocal juego_iniciado
         if not juego_iniciado:
@@ -1276,9 +1198,6 @@ def crear_ventana_juego(ventana_principal, usuario):
             celda.insert(0, valor_anterior)
         celda.configure(state="readonly")
     
-    #E:ninguna
-    #S:None
-    #Funcion:Rehace la última jugada deshecha
     def rehacer_jugada():
         nonlocal juego_iniciado
         if not juego_iniciado:
@@ -1308,10 +1227,6 @@ def crear_ventana_juego(ventana_principal, usuario):
         if verificar_finalizacion():
             finalizar_juego()
     
-    #E:int fila - Fila de la celda
-    #E:int columna - Columna de la celda
-    #S:None
-    #Funcion:Coloca el elemento seleccionado en la celda del tablero
     def colocar_elemento(fila, columna):
         nonlocal elemento_seleccionado, boton_seleccionado, juego_iniciado
         
@@ -1344,9 +1259,6 @@ def crear_ventana_juego(ventana_principal, usuario):
         else:
             reanudar_temporizador()
     
-    #E:ninguna
-    #S:None
-    #Funcion:Borra el juego actual y lo reinicia al estado inicial
     def borrar_juego():
         nonlocal juego_iniciado, pila_jugadas_realizadas, pila_jugadas_eliminadas, tiempo_transcurrido, tiempo_restante, tipo_reloj, timer_se_convirtio_a_cronometro, tiempo_acumulado_al_convertir
         
@@ -1354,7 +1266,7 @@ def crear_ventana_juego(ventana_principal, usuario):
             mostrar_error_general_simple("NO SE HA INICIADO EL JUEGO")
             return
         
-        respuesta = mostrar_error_general_simple("¿ESTÁ SEGURO DE BORRAR EL JUEGO?", "BORRAR JUEGO", yesno=True)
+        respuesta = mostrar_error_general_simple("¿ESTA SEGURO DE BORRAR EL JUEGO?", "BORRAR JUEGO", yesno=True)
         if not respuesta:
             return
         
@@ -1386,9 +1298,6 @@ def crear_ventana_juego(ventana_principal, usuario):
             tiempo_acumulado_al_convertir = 0
         actualizar_temporizador_display()
     
-    #E:ninguna
-    #S:None
-    #Funcion:Termina el juego actual y vuelve a crear una nueva partida
     def terminar_juego():
         nonlocal juego_iniciado
         
@@ -1396,16 +1305,13 @@ def crear_ventana_juego(ventana_principal, usuario):
             mostrar_error_general_simple("NO SE HA INICIADO EL JUEGO")
             return
         
-        respuesta = mostrar_error_general_simple("¿ESTÁ SEGURO DE TERMINAR EL JUEGO?", "TERMINAR JUEGO", yesno=True)
+        respuesta = mostrar_error_general_simple("¿ESTA SEGURO DE TERMINAR EL JUEGO?", "TERMINAR JUEGO", yesno=True)
         if not respuesta:
             return
         
         ventana_juego.destroy()
         crear_ventana_juego(ventana_principal, usuario)
     
-    #E:ninguna
-    #S:None
-    #Funcion:Genera y muestra el TOP X de mejores tiempos
     def top_x():
         pausar_temporizador()
         ventana_juego.withdraw()
@@ -1418,10 +1324,6 @@ def crear_ventana_juego(ventana_principal, usuario):
         ventana_juego.deiconify()
         reanudar_temporizador()
     
-    #E:str elemento - Elemento seleccionado
-    #E:tk.Button boton - Botón que fue presionado
-    #S:None
-    #Funcion:Selecciona un elemento para colocar en el tablero
     def seleccionar_elemento(elemento, boton):
         nonlocal elemento_seleccionado, boton_seleccionado
         if boton_seleccionado:
@@ -1430,13 +1332,9 @@ def crear_ventana_juego(ventana_principal, usuario):
         boton_seleccionado = boton
         boton_seleccionado.configure(bg="lightgreen")
     
-    #E:ninguna
-    #S:None
-    #Funcion:Inicia el juego con el nombre del usuario autenticado
     def iniciar_juego():
         nonlocal juego_iniciado, fecha_hora_inicio, nombre_jugador, tiempo_restante, tipo_reloj, tiempo_inicial_segundos, pila_jugadas_realizadas, pila_jugadas_eliminadas, tiempo_transcurrido, timer_se_convirtio_a_cronometro, tiempo_acumulado_al_convertir
         
-        #El nombre ya está tomado del usuario autenticado
         if nombre_existe_en_bitacora(nombre_jugador):
             respuesta = mostrar_error_general_simple(f"El nombre '{nombre_jugador}' ya existe en el TOP. ¿Desea usarlo?", "Nombre existente", yesno=True)
             if not respuesta:
@@ -1448,7 +1346,7 @@ def crear_ventana_juego(ventana_principal, usuario):
                 minutos_timer = int(entrada_timer_minutos.get())
                 segundos_timer = int(entrada_timer_segundos.get())
                 if horas_timer < 0 or horas_timer > 4 or minutos_timer < 0 or minutos_timer > 59 or segundos_timer < 0 or segundos_timer > 59:
-                    mostrar_error_general_simple("Valores de timer inválidos")
+                    mostrar_error_general_simple("Valores de timer invalidos")
                     return
                 if horas_timer == 0 and minutos_timer == 0 and segundos_timer == 0:
                     mostrar_error_general_simple("El timer debe tener al menos un valor mayor a cero")
@@ -1457,7 +1355,7 @@ def crear_ventana_juego(ventana_principal, usuario):
                 tiempo_restante = tiempo_inicial_segundos
                 actualizar_temporizador_display()
             except ValueError:
-                mostrar_error_general_simple("Los valores del timer deben ser números enteros")
+                mostrar_error_general_simple("Los valores del timer deben ser numeros enteros")
                 return
         
         timer_se_convirtio_a_cronometro = False
@@ -1476,9 +1374,6 @@ def crear_ventana_juego(ventana_principal, usuario):
         actualizar_temporizador_display()
         reanudar_temporizador()
     
-    #E:ninguna
-    #S:None
-    #Funcion:Maneja el cierre de la ventana de juego
     def on_cerrar_juego():
         pausar_temporizador()
         ventana_juego.destroy()
@@ -1486,7 +1381,7 @@ def crear_ventana_juego(ventana_principal, usuario):
     
     ventana_juego.protocol("WM_DELETE_WINDOW", on_cerrar_juego)
     
-    #INTERFAZ GRÁFICA
+    #INTERFAZ GRAFICA
     etiqueta_titulo = tk.Label(ventana_juego, text="S U D O K U", font=("Arial", 24, "bold"))
     etiqueta_titulo.pack(pady=10)
     
@@ -1507,7 +1402,6 @@ def crear_ventana_juego(ventana_principal, usuario):
     etiqueta_elementos_valor = tk.Label(frame_nivel_visible, text=elementos_texto, font=("Arial", 12), fg="green")
     etiqueta_elementos_valor.pack(side=tk.LEFT, padx=5)
     
-    #Mostrar el nombre del jugador autenticado
     etiqueta_jugador_titulo = tk.Label(frame_nivel_visible, text="Jugador:", font=("Arial", 12, "bold"))
     etiqueta_jugador_titulo.pack(side=tk.LEFT, padx=(20,5))
     
@@ -1520,8 +1414,6 @@ def crear_ventana_juego(ventana_principal, usuario):
     frame_columna_izquierda = tk.Frame(frame_principal)
     frame_columna_izquierda.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
     
-    #Ya no se necesita el campo de entrada de nombre de jugador
-    #Se reemplaza por una etiqueta que muestra el nombre del usuario autenticado
     frame_jugador = tk.Frame(frame_columna_izquierda)
     frame_jugador.pack(fill=tk.X, pady=(0,15))
     
@@ -1674,18 +1566,15 @@ def crear_ventana_juego(ventana_principal, usuario):
     
     ventana_principal.withdraw()
 
-#E:tk.Tk ventana_principal - Ventana principal del menú
+#E:tk.Tk ventana_principal - Ventana principal del menu
 #S:None
-#Funcion:Crea y muestra la ventana de configuración
+#Funcion:Crea y muestra la ventana de configuracion
 def crear_ventana_configuracion(ventana_principal):
     ventana_configuracion = tk.Toplevel(ventana_principal)
-    ventana_configuracion.title("Sudoku - Configuración")
+    ventana_configuracion.title("Sudoku - Configuracion")
     ventana_configuracion.geometry("500x650")
     ventana_configuracion.resizable(False, False)
     
-    #E:ninguna
-    #S:None
-    #Funcion:Cierra la ventana de configuración y muestra la principal
     def on_cerrar_configuracion():
         ventana_configuracion.destroy()
         ventana_principal.deiconify()
@@ -1703,7 +1592,7 @@ def crear_ventana_configuracion(ventana_principal):
     canvas_configuracion.pack(side="left", fill="both", expand=True)
     scrollbar_vertical.pack(side="right", fill="y")
     
-    etiqueta_titulo = tk.Label(frame_scrollable, text="CONFIGURACIÓN", font=("Arial", 18, "bold"))
+    etiqueta_titulo = tk.Label(frame_scrollable, text="CONFIGURACION", font=("Arial", 18, "bold"))
     etiqueta_titulo.pack(pady=10)
     
     frame_nivel = tk.LabelFrame(frame_scrollable, text="NIVEL", font=("Arial", 12, "bold"))
@@ -1716,13 +1605,13 @@ def crear_ventana_configuracion(ventana_principal):
     
     variable_nivel = tk.StringVar(value=config_actual.get("nivel", "facil"))
     
-    opcion_facil = tk.Radiobutton(frame_nivel, text="Fácil", variable=variable_nivel, value="facil")
+    opcion_facil = tk.Radiobutton(frame_nivel, text="Facil", variable=variable_nivel, value="facil")
     opcion_facil.pack(anchor=tk.W, padx=20, pady=5)
     
     opcion_intermedio = tk.Radiobutton(frame_nivel, text="Intermedio", variable=variable_nivel, value="intermedio")
     opcion_intermedio.pack(anchor=tk.W, padx=20, pady=5)
     
-    opcion_dificil = tk.Radiobutton(frame_nivel, text="Difícil", variable=variable_nivel, value="dificil")
+    opcion_dificil = tk.Radiobutton(frame_nivel, text="Dificil", variable=variable_nivel, value="dificil")
     opcion_dificil.pack(anchor=tk.W, padx=20, pady=5)
     
     frame_reloj = tk.LabelFrame(frame_scrollable, text="RELOJ", font=("Arial", 12, "bold"))
@@ -1730,7 +1619,7 @@ def crear_ventana_configuracion(ventana_principal):
     
     variable_reloj = tk.StringVar(value=config_actual.get("reloj", "cronometro"))
     
-    opcion_cronometro = tk.Radiobutton(frame_reloj, text="Cronómetro", variable=variable_reloj, value="cronometro")
+    opcion_cronometro = tk.Radiobutton(frame_reloj, text="Cronometro", variable=variable_reloj, value="cronometro")
     opcion_cronometro.pack(anchor=tk.W, padx=20, pady=5)
     
     opcion_timer = tk.Radiobutton(frame_reloj, text="Timer", variable=variable_reloj, value="timer")
@@ -1793,7 +1682,7 @@ def crear_ventana_configuracion(ventana_principal):
     frame_tabla_equivalencias = tk.Frame(frame_elementos)
     frame_tabla_equivalencias.pack(pady=10)
     
-    etiqueta_numeros = tk.Label(frame_tabla_equivalencias, text="Números", font=("Arial", 10, "bold"))
+    etiqueta_numeros = tk.Label(frame_tabla_equivalencias, text="Numeros", font=("Arial", 10, "bold"))
     etiqueta_numeros.grid(row=0, column=0, padx=20)
     
     etiqueta_letras = tk.Label(frame_tabla_equivalencias, text="Letras", font=("Arial", 10, "bold"))
@@ -1807,7 +1696,7 @@ def crear_ventana_configuracion(ventana_principal):
         etiqueta_letra = tk.Label(frame_tabla_equivalencias, text=letra_correspondiente)
         etiqueta_letra.grid(row=indice_equivalencia, column=1, padx=20)
     
-    opcion_numeros = tk.Radiobutton(frame_elementos, text="Usar Números (1-9)", variable=variable_elementos, value="numeros")
+    opcion_numeros = tk.Radiobutton(frame_elementos, text="Usar Numeros (1-9)", variable=variable_elementos, value="numeros")
     opcion_numeros.pack(anchor=tk.W, padx=20, pady=5)
     
     opcion_letras = tk.Radiobutton(frame_elementos, text="Usar Letras (A-I)", variable=variable_elementos, value="letras")
@@ -1816,9 +1705,6 @@ def crear_ventana_configuracion(ventana_principal):
     frame_botones = tk.Frame(frame_scrollable)
     frame_botones.pack(pady=20)
     
-    #E:ninguna
-    #S:None
-    #Funcion:Guarda la configuración en el archivo JSON
     def guardar_configuracion():
         nivel_seleccionado = variable_nivel.get()
         reloj_seleccionado = variable_reloj.get()
@@ -1830,7 +1716,7 @@ def crear_ventana_configuracion(ventana_principal):
                 messagebox.showerror("Error", "TOP X debe ser un entero entre 0 y 10")
                 return
         except ValueError:
-            messagebox.showerror("Error", "TOP X debe ser un número entero")
+            messagebox.showerror("Error", "TOP X debe ser un numero entero")
             return
         
         if reloj_seleccionado == "timer":
@@ -1852,7 +1738,7 @@ def crear_ventana_configuracion(ventana_principal):
                     messagebox.showerror("Error", "El timer debe tener al menos un valor mayor a cero")
                     return
             except ValueError:
-                messagebox.showerror("Error", "Horas, minutos y segundos deben ser números enteros")
+                messagebox.showerror("Error", "Horas, minutos y segundos deben ser numeros enteros")
                 return
         
         datos_configuracion = {
@@ -1874,13 +1760,10 @@ def crear_ventana_configuracion(ventana_principal):
         with open(nombre_archivo, "w") as archivo:
             json.dump(datos_configuracion, archivo, indent=4)
         
-        messagebox.showinfo("Éxito", "Configuración guardada.")
+        messagebox.showinfo("Exito", "Configuracion guardada.")
         ventana_configuracion.destroy()
         ventana_principal.deiconify()
     
-    #E:ninguna
-    #S:None
-    #Funcion:Cancela la configuración y cierra la ventana
     def cancelar_configuracion():
         ventana_configuracion.destroy()
         ventana_principal.deiconify()
@@ -1894,51 +1777,33 @@ def crear_ventana_configuracion(ventana_principal):
     ventana_principal.withdraw()
 
 #E:dict usuario - Diccionario con datos del usuario autenticado
-#S:tk.Tk - Ventana principal del menú
-#Funcion:Crea la ventana principal del menú con el nombre del usuario autenticado
+#S:tk.Tk - Ventana principal del menu
+#Funcion:Crea la ventana principal del menu con el nombre del usuario autenticado
 def crear_ventana_principal(usuario):
     ventana_principal = tk.Tk()
     ventana_principal.title("Sudoku")
     ventana_principal.geometry("400x350")
     ventana_principal.resizable(False, False)
     
-    #Mostrar nombre del usuario autenticado
     frame_usuario = tk.Frame(ventana_principal)
     frame_usuario.pack(pady=10)
     
-    label_usuario = tk.Label(frame_usuario, text=f"Usuario: {usuario['nombre']}", font=("Arial", 12, "bold"), fg="purple")
-    label_usuario.pack()
-    
-    label_correo = tk.Label(frame_usuario, text=f"Correo: {usuario['correo']}", font=("Arial", 10), fg="gray")
+    #SOLO mostrar el correo del usuario autenticado
+    label_correo = tk.Label(frame_usuario, text=f"Correo: {usuario['correo']}", font=("Arial", 12, "bold"), fg="purple")
     label_correo.pack()
     
-    #E:ninguna
-    #S:None
-    #Funcion:Abre la ventana de juego con el usuario autenticado
     def accion_boton_jugar():
         crear_ventana_juego(ventana_principal, usuario)
     
-    #E:ninguna
-    #S:None
-    #Funcion:Abre la ventana de configuración
     def accion_boton_configurar():
         crear_ventana_configuracion(ventana_principal)
     
-    #E:ninguna
-    #S:None
-    #Funcion:Muestra la ventana "Acerca de"
     def accion_boton_acerca_de():
         mostrar_acerca_de()
     
-    #E:ninguna
-    #S:None
-    #Funcion:Abre el manual de usuario en PDF
     def accion_boton_ayuda():
         abrir_manual_usuario()
     
-    #E:ninguna
-    #S:None
-    #Funcion:Cierra la aplicación
     def accion_boton_salir():
         ventana_principal.destroy()
     
@@ -1961,21 +1826,15 @@ def crear_ventana_principal(usuario):
 
 #E:ninguna
 #S:None
-#Funcion:Muestra la ventana de login y maneja el flujo principal de la aplicación
+#Funcion:Muestra la ventana de login y maneja el flujo principal de la aplicacion
 def main():
-    #Eliminar función de crear archivo de partidas ya que ahora se generan automáticamente
-    #No se usa sudoku2026partidas.json
-    
-    #Resetear configuración si no existe
     resetear_configuracion_a_default()
-    
-    #Mostrar ventana de login
     mostrar_ventana_login()
     tk.mainloop()
 
 #E:ninguna
-#S:dict - Configuración por defecto
-#Funcion:Resetea el archivo de configuración a los valores por defecto
+#S:dict - Configuracion por defecto
+#Funcion:Resetea el archivo de configuracion a los valores por defecto (SIEMPRE sobreescribe)
 def resetear_configuracion_a_default():
     directorio_script = obtener_directorio_script()
     archivo_config = os.path.join(directorio_script, "sudoku2026configuracion.json")
@@ -1987,10 +1846,9 @@ def resetear_configuracion_a_default():
         "elementos": "numeros"
     }
     
-    #Solo crear si no existe
-    if not os.path.exists(archivo_config):
-        with open(archivo_config, "w") as archivo:
-            json.dump(configuracion_default, archivo, indent=4)
+    #SIEMPRE sobreescribir con valores default
+    with open(archivo_config, "w") as archivo:
+        json.dump(configuracion_default, archivo, indent=4)
     
     return configuracion_default
 
