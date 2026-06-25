@@ -40,5 +40,26 @@
         "codigo_ingreso": "c30c8871d8225b73e5be7f87d044b01b12c8684c88caa0bf17382f80f80d4a87",
         "nombre": "",
         "fecha_creacion": "2026-06-24T20:55:15.234764"
+    },
+    {
+        "id": 7,
+        "correo": "laskdo@gmail.com",
+        "codigo_ingreso": "43a025ca46d6118dd6464ac07f456b7e5185b3ebea9b8cee2d6b4af1d084ad87",
+        "nombre": "",
+        "fecha_creacion": "2026-06-24T23:44:02.535733"
+    },
+    {
+        "id": 8,
+        "correo": "camila@gmail.com",
+        "codigo_ingreso": "219983cf793ae3d82c5899779c819d708e573820dc3ae94977d224ce0f7a44cb",
+        "nombre": "",
+        "fecha_creacion": "2026-06-25T01:14:17.167125"
+    },
+    {
+        "id": 9,
+        "correo": "hola@gmail.com",
+        "codigo_ingreso": "626860d7d964c43d13506e94fff5fbf6946eaacf346a89f05e1c6d943a0401af",
+        "nombre": "",
+        "fecha_creacion": "2026-06-25T01:31:00.027818"
     }
 ]
