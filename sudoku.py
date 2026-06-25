@@ -53,7 +53,12 @@ def resetear_configuracion_a_default():
         "nivel": "facil",
         "reloj": "cronometro",
         "top_x": 0,
-        "elementos": "numeros"
+        "elementos": "numeros",
+        "tiempos_multinivel": {
+            "facil": {"horas": 0, "minutos": 0, "segundos": 0},
+            "intermedio": {"horas": 0, "minutos": 0, "segundos": 0},
+            "dificil": {"horas": 0, "minutos": 0, "segundos": 0}
+        }
     }
     
     with open(archivo_config, "w") as archivo:
@@ -791,9 +796,10 @@ def mostrar_login(ventana_principal):
 
 #E:tk.Tk ventana_principal - Ventana principal del menu
 #E:dict usuario - Diccionario con datos del usuario autenticado
+#E:str nivel_inicial - Nivel inicial (por defecto "facil")
 #S:None
-#Funcion:Crea y muestra la ventana de juego con el usuario autenticado
-def crear_ventana_juego(ventana_principal, usuario):
+#Funcion:Crea y muestra la ventana de juego con el usuario autenticado y nivel especificado
+def crear_ventana_juego(ventana_principal, usuario, nivel_inicial="facil"):
     directorio_script = obtener_directorio_script()
     archivo_config = os.path.join(directorio_script, "sudoku2026configuracion.json")
     archivo_partidas_guardadas = os.path.join(directorio_script, "sudoku2026juegoactual.json")
@@ -801,13 +807,26 @@ def crear_ventana_juego(ventana_principal, usuario):
     with open(archivo_config, "r") as archivo:
         configuracion_actual = json.load(archivo)
     
-    nivel_actual = configuracion_actual.get("nivel", "facil")
+    nivel_actual = nivel_inicial
     tipo_elementos = configuracion_actual.get("elementos", "numeros")
     elementos_personalizados = configuracion_actual.get("elementos_personalizados", [])
     tipo_reloj_actual = configuracion_actual.get("reloj", "cronometro")
-    tiempo_inicial = configuracion_actual.get("tiempo_inicial", {"horas": 0, "minutos": 0, "segundos": 0})
+    es_multinivel = configuracion_actual.get("nivel", "facil") == "multinivel"
     
-    #GENERAR PARTIDA EN TIEMPO REAL
+    tiempos_multinivel = configuracion_actual.get("tiempos_multinivel", {})
+    
+    tiempo_inicial = {"horas": 0, "minutos": 0, "segundos": 0}
+    
+    if es_multinivel:
+        nivel_tiempo = tiempos_multinivel.get(nivel_actual, {})
+        tiempo_inicial = {
+            "horas": nivel_tiempo.get("horas", 0),
+            "minutos": nivel_tiempo.get("minutos", 0),
+            "segundos": nivel_tiempo.get("segundos", 0)
+        }
+    else:
+        tiempo_inicial = configuracion_actual.get("tiempo_inicial", {"horas": 0, "minutos": 0, "segundos": 0})
+    
     tablero_juego, tablero_solucion = generar_partida_unica(nivel_actual)
     
     partida_cargada = {}
@@ -839,6 +858,9 @@ def crear_ventana_juego(ventana_principal, usuario):
     lista_botones_accion = []
     lista_celdas_tablero = []
     
+    niveles_orden = ["facil", "intermedio", "dificil"]
+    nivel_actual_idx = niveles_orden.index(nivel_actual)
+    
     def elemento_a_numero(elemento):
         if elemento == "":
             return 0
@@ -846,7 +868,7 @@ def crear_ventana_juego(ventana_principal, usuario):
             return int(elemento)
         elif tipo_elementos == "letras":
             return ord(elemento) - ord('A') + 1
-        else:  #personalizados
+        else:
             try:
                 return elementos_personalizados.index(elemento) + 1
             except ValueError:
@@ -857,7 +879,7 @@ def crear_ventana_juego(ventana_principal, usuario):
             return str(numero)
         elif tipo_elementos == "letras":
             return chr(ord('A') + numero - 1)
-        else:  #personalizados
+        else:
             if 1 <= numero <= len(elementos_personalizados):
                 return elementos_personalizados[numero - 1]
             return ""
@@ -871,10 +893,8 @@ def crear_ventana_juego(ventana_principal, usuario):
         matriz_valores_actuales[fila][columna] = elemento_mostrar
         matriz_fijos[fila][columna] = True
     
-    #El nombre del jugador se toma del usuario autenticado
     nombre_jugador = usuario.get("nombre", "")
     
-    #Si el usuario no tiene nombre, pedirlo
     if not nombre_jugador:
         ventana_nombre = tk.Toplevel(ventana_principal)
         ventana_nombre.title("Nombre de usuario")
@@ -913,7 +933,7 @@ def crear_ventana_juego(ventana_principal, usuario):
             if actualizar_nombre_usuario(usuario["correo"], nombre):
                 usuario["nombre"] = nombre
                 ventana_nombre.destroy()
-                crear_ventana_juego(ventana_principal, usuario)
+                crear_ventana_juego(ventana_principal, usuario, nivel_actual)
             else:
                 label_estado_nombre.config(text="Error al guardar el nombre")
         
@@ -989,7 +1009,7 @@ def crear_ventana_juego(ventana_principal, usuario):
                     reanudar_temporizador()
                 else:
                     ventana_juego.destroy()
-                    crear_ventana_juego(ventana_principal, usuario)
+                    crear_ventana_juego(ventana_principal, usuario, nivel_actual)
     
     def verificar_finalizacion():
         for fila in range(9):
@@ -999,7 +1019,7 @@ def crear_ventana_juego(ventana_principal, usuario):
         return True
     
     def finalizar_juego():
-        nonlocal juego_iniciado
+        nonlocal juego_iniciado, nivel_actual, nivel_actual_idx
         
         pausar_temporizador()
         juego_iniciado = False
@@ -1015,12 +1035,25 @@ def crear_ventana_juego(ventana_principal, usuario):
         fecha_hora_actual = datetime.now().strftime("%Y%m%dT%H%M%S")
         guardar_partida_en_bitacora(nombre_jugador, nivel_actual, duracion, fecha_hora_actual)
         
-        ventana_juego.withdraw()
-        messagebox.showinfo("¡EXCELENTE!", "¡JUEGO COMPLETADO!")
-        ventana_juego.deiconify()
-        
-        ventana_juego.destroy()
-        crear_ventana_juego(ventana_principal, usuario)
+        if es_multinivel:
+            siguiente_idx = (nivel_actual_idx + 1) % len(niveles_orden)
+            siguiente_nivel = niveles_orden[siguiente_idx]
+            
+            ventana_juego.withdraw()
+            messagebox.showinfo("¡NIVEL COMPLETADO!", 
+                              f"¡Excelente! Has completado el nivel {nivel_actual.upper()}.\n\n"
+                              f"Avanzando al nivel: {siguiente_nivel.upper()}")
+            ventana_juego.deiconify()
+            
+            ventana_juego.destroy()
+            crear_ventana_juego(ventana_principal, usuario, siguiente_nivel)
+        else:
+            ventana_juego.withdraw()
+            messagebox.showinfo("¡EXCELENTE!", "¡JUEGO COMPLETADO!")
+            ventana_juego.deiconify()
+            
+            ventana_juego.destroy()
+            ventana_principal.deiconify()
     
     def guardar_juego():
         nonlocal juego_iniciado, nombre_jugador, nivel_actual, tipo_elementos, tipo_reloj_actual
@@ -1404,7 +1437,7 @@ def crear_ventana_juego(ventana_principal, usuario):
             return
         
         ventana_juego.destroy()
-        crear_ventana_juego(ventana_principal, usuario)
+        ventana_principal.deiconify()
     
     def top_x():
         pausar_temporizador()
@@ -1434,7 +1467,7 @@ def crear_ventana_juego(ventana_principal, usuario):
             if not respuesta:
                 return
         
-        if tipo_reloj_actual == "timer":
+        if tipo_reloj_actual == "timer" and not es_multinivel:
             try:
                 horas_timer = int(entrada_timer_horas.get())
                 minutos_timer = int(entrada_timer_minutos.get())
@@ -1461,7 +1494,7 @@ def crear_ventana_juego(ventana_principal, usuario):
         juego_iniciado = True
         fecha_hora_inicio = datetime.now()
         boton_iniciar_juego.config(state=tk.DISABLED)
-        if tipo_reloj_actual == "timer":
+        if tipo_reloj_actual == "timer" and not es_multinivel:
             entrada_timer_horas.config(state=tk.DISABLED)
             entrada_timer_minutos.config(state=tk.DISABLED)
             entrada_timer_segundos.config(state=tk.DISABLED)
@@ -1488,6 +1521,13 @@ def crear_ventana_juego(ventana_principal, usuario):
     
     etiqueta_nivel_valor = tk.Label(frame_nivel_visible, text=nivel_texto, font=("Arial", 12), fg="blue")
     etiqueta_nivel_valor.pack(side=tk.LEFT, padx=5)
+    
+    if es_multinivel:
+        etiqueta_modo_titulo = tk.Label(frame_nivel_visible, text="Modo:", font=("Arial", 12, "bold"))
+        etiqueta_modo_titulo.pack(side=tk.LEFT, padx=(20,5))
+        
+        etiqueta_modo_valor = tk.Label(frame_nivel_visible, text="MULTINIVEL", font=("Arial", 12), fg="red")
+        etiqueta_modo_valor.pack(side=tk.LEFT, padx=5)
     
     if tipo_elementos == "numeros":
         elementos_texto = "Numeros (1-9)"
@@ -1606,7 +1646,7 @@ def crear_ventana_juego(ventana_principal, usuario):
         etiqueta_segundos = tk.Label(frame_temporizador, text="Segundos: 00")
         etiqueta_segundos.pack(anchor=tk.W, padx=10, pady=2)
         
-        if tipo_reloj_actual == "timer":
+        if tipo_reloj_actual == "timer" and not es_multinivel:
             frame_timer_input = tk.LabelFrame(frame_botones_scrollable, text="MODIFICAR TIMER", font=("Arial", 10, "bold"))
             frame_timer_input.pack(fill=tk.X, pady=10, padx=10)
             
@@ -1637,6 +1677,15 @@ def crear_ventana_juego(ventana_principal, usuario):
             entrada_timer_horas = None
             entrada_timer_minutos = None
             entrada_timer_segundos = None
+            
+            if es_multinivel and tipo_reloj_actual == "timer":
+                tiempo_mostrar = tiempos_multinivel.get(nivel_actual, {})
+                horas = tiempo_mostrar.get("horas", 0)
+                minutos = tiempo_mostrar.get("minutos", 0)
+                segundos = tiempo_mostrar.get("segundos", 0)
+                etiqueta_horas.config(text=f"Horas: {horas:02d}")
+                etiqueta_minutos.config(text=f"Minutos: {minutos:02d}")
+                etiqueta_segundos.config(text=f"Segundos: {segundos:02d}")
     else:
         etiqueta_horas = None
         etiqueta_minutos = None
@@ -1683,7 +1732,7 @@ def crear_ventana_juego(ventana_principal, usuario):
 def crear_ventana_configuracion(ventana_principal):
     ventana_configuracion = tk.Toplevel(ventana_principal)
     ventana_configuracion.title("Sudoku - Configuracion")
-    ventana_configuracion.geometry("550x750")
+    ventana_configuracion.geometry("600x850")
     ventana_configuracion.resizable(False, False)
     
     def on_cerrar_configuracion():
@@ -1706,15 +1755,30 @@ def crear_ventana_configuracion(ventana_principal):
     etiqueta_titulo = tk.Label(frame_scrollable, text="CONFIGURACION", font=("Arial", 18, "bold"))
     etiqueta_titulo.pack(pady=10)
     
-    frame_nivel = tk.LabelFrame(frame_scrollable, text="NIVEL", font=("Arial", 12, "bold"))
-    frame_nivel.pack(fill=tk.X, padx=20, pady=10)
-    
+    #Leer configuracion
     directorio_script = obtener_directorio_script()
     archivo_config = os.path.join(directorio_script, "sudoku2026configuracion.json")
     with open(archivo_config, "r") as archivo:
         config_actual = json.load(archivo)
     
-    variable_nivel = tk.StringVar(value=config_actual.get("nivel", "facil"))
+    #Valores por defecto
+    nivel_default = config_actual.get("nivel", "facil")
+    reloj_default = config_actual.get("reloj", "cronometro")
+    top_x_default = config_actual.get("top_x", 0)
+    elementos_default = config_actual.get("elementos", "numeros")
+    elementos_personalizados_guardados = config_actual.get("elementos_personalizados", [])
+    tiempo_inicial_default = config_actual.get("tiempo_inicial", {"horas": 0, "minutos": 0, "segundos": 0})
+    tiempos_multinivel = config_actual.get("tiempos_multinivel", {
+        "facil": {"horas": 0, "minutos": 0, "segundos": 0},
+        "intermedio": {"horas": 0, "minutos": 0, "segundos": 0},
+        "dificil": {"horas": 0, "minutos": 0, "segundos": 0}
+    })
+    
+    #====================NIVEL====================
+    frame_nivel = tk.LabelFrame(frame_scrollable, text="NIVEL", font=("Arial", 12, "bold"))
+    frame_nivel.pack(fill=tk.X, padx=20, pady=10)
+    
+    variable_nivel = tk.StringVar(value=nivel_default)
     
     opcion_facil = tk.Radiobutton(frame_nivel, text="Facil", variable=variable_nivel, value="facil")
     opcion_facil.pack(anchor=tk.W, padx=20, pady=5)
@@ -1725,10 +1789,14 @@ def crear_ventana_configuracion(ventana_principal):
     opcion_dificil = tk.Radiobutton(frame_nivel, text="Dificil", variable=variable_nivel, value="dificil")
     opcion_dificil.pack(anchor=tk.W, padx=20, pady=5)
     
+    opcion_multinivel = tk.Radiobutton(frame_nivel, text="Multinivel", variable=variable_nivel, value="multinivel")
+    opcion_multinivel.pack(anchor=tk.W, padx=20, pady=5)
+    
+    #====================RELOJ====================
     frame_reloj = tk.LabelFrame(frame_scrollable, text="RELOJ", font=("Arial", 12, "bold"))
     frame_reloj.pack(fill=tk.X, padx=20, pady=10)
     
-    variable_reloj = tk.StringVar(value=config_actual.get("reloj", "cronometro"))
+    variable_reloj = tk.StringVar(value=reloj_default)
     
     opcion_cronometro = tk.Radiobutton(frame_reloj, text="Cronometro", variable=variable_reloj, value="cronometro")
     opcion_cronometro.pack(anchor=tk.W, padx=20, pady=5)
@@ -1739,7 +1807,40 @@ def crear_ventana_configuracion(ventana_principal):
     opcion_no_reloj = tk.Radiobutton(frame_reloj, text="No usar reloj", variable=variable_reloj, value="no_reloj")
     opcion_no_reloj.pack(anchor=tk.W, padx=20, pady=5)
     
-    frame_timer_valores = tk.LabelFrame(frame_scrollable, text="VALORES PARA TIMER", font=("Arial", 10, "bold"))
+    #Funcion para habilitar/deshabilitar campos de timer multinivel
+    def actualizar_estado_timer_multinivel(*args):
+        es_multinivel = variable_nivel.get() == "multinivel"
+        es_timer = variable_reloj.get() == "timer"
+        
+        #Habilitar/deshabilitar campos de timer multinivel
+        estado_multinivel = "normal" if (es_multinivel and es_timer) else "disabled"
+        fondo_multinivel = "white" if (es_multinivel and es_timer) else "#f0f0f0"
+        
+        #Campos del nivel Facil
+        entrada_facil_horas.config(state=estado_multinivel, bg=fondo_multinivel)
+        entrada_facil_minutos.config(state=estado_multinivel, bg=fondo_multinivel)
+        entrada_facil_segundos.config(state=estado_multinivel, bg=fondo_multinivel)
+        
+        #Campos del nivel Intermedio
+        entrada_intermedio_horas.config(state=estado_multinivel, bg=fondo_multinivel)
+        entrada_intermedio_minutos.config(state=estado_multinivel, bg=fondo_multinivel)
+        entrada_intermedio_segundos.config(state=estado_multinivel, bg=fondo_multinivel)
+        
+        #Campos del nivel Dificil
+        entrada_dificil_horas.config(state=estado_multinivel, bg=fondo_multinivel)
+        entrada_dificil_minutos.config(state=estado_multinivel, bg=fondo_multinivel)
+        entrada_dificil_segundos.config(state=estado_multinivel, bg=fondo_multinivel)
+        
+        #Habilitar/deshabilitar campos de timer normal
+        estado_normal = "disabled" if es_multinivel else ("normal" if es_timer else "disabled")
+        fondo_normal = "#f0f0f0" if es_multinivel else ("white" if es_timer else "#f0f0f0")
+        
+        entrada_horas.config(state=estado_normal, bg=fondo_normal)
+        entrada_minutos.config(state=estado_normal, bg=fondo_normal)
+        entrada_segundos.config(state=estado_normal, bg=fondo_normal)
+    
+    #====================VALORES PARA TIMER (MODO NORMAL)====================
+    frame_timer_valores = tk.LabelFrame(frame_scrollable, text="VALORES PARA TIMER (MODO NORMAL)", font=("Arial", 10, "bold"))
     frame_timer_valores.pack(fill=tk.X, padx=20, pady=10)
     
     frame_horas = tk.Frame(frame_timer_valores)
@@ -1749,7 +1850,7 @@ def crear_ventana_configuracion(ventana_principal):
     etiqueta_horas.pack()
     
     entrada_horas = tk.Entry(frame_horas, width=10, justify="center")
-    entrada_horas.insert(0, str(config_actual.get("tiempo_inicial", {}).get("horas", 0)))
+    entrada_horas.insert(0, str(tiempo_inicial_default.get("horas", 0)))
     entrada_horas.pack()
     
     frame_minutos = tk.Frame(frame_timer_valores)
@@ -1759,7 +1860,7 @@ def crear_ventana_configuracion(ventana_principal):
     etiqueta_minutos.pack()
     
     entrada_minutos = tk.Entry(frame_minutos, width=10, justify="center")
-    entrada_minutos.insert(0, str(config_actual.get("tiempo_inicial", {}).get("minutos", 0)))
+    entrada_minutos.insert(0, str(tiempo_inicial_default.get("minutos", 0)))
     entrada_minutos.pack()
     
     frame_segundos = tk.Frame(frame_timer_valores)
@@ -1769,9 +1870,105 @@ def crear_ventana_configuracion(ventana_principal):
     etiqueta_segundos.pack()
     
     entrada_segundos = tk.Entry(frame_segundos, width=10, justify="center")
-    entrada_segundos.insert(0, str(config_actual.get("tiempo_inicial", {}).get("segundos", 0)))
+    entrada_segundos.insert(0, str(tiempo_inicial_default.get("segundos", 0)))
     entrada_segundos.pack()
     
+    #====================VALORES PARA TIMER MULTINIVEL====================
+    frame_timer_multinivel = tk.LabelFrame(frame_scrollable, text="VALORES PARA TIMER MULTINIVEL", font=("Arial", 10, "bold"))
+    frame_timer_multinivel.pack(fill=tk.X, padx=20, pady=10)
+    
+    #Nivel Facil
+    frame_facil = tk.LabelFrame(frame_timer_multinivel, text="Nivel Facil", font=("Arial", 9, "bold"))
+    frame_facil.pack(fill=tk.X, padx=10, pady=5)
+    
+    frame_facil_horas = tk.Frame(frame_facil)
+    frame_facil_horas.pack(side=tk.LEFT, expand=True, padx=5, pady=5)
+    label_facil_horas = tk.Label(frame_facil_horas, text="Horas")
+    label_facil_horas.pack()
+    entrada_facil_horas = tk.Entry(frame_facil_horas, width=8, justify="center")
+    entrada_facil_horas.insert(0, str(tiempos_multinivel.get("facil", {}).get("horas", 0)))
+    entrada_facil_horas.pack()
+    
+    frame_facil_minutos = tk.Frame(frame_facil)
+    frame_facil_minutos.pack(side=tk.LEFT, expand=True, padx=5, pady=5)
+    label_facil_minutos = tk.Label(frame_facil_minutos, text="Minutos")
+    label_facil_minutos.pack()
+    entrada_facil_minutos = tk.Entry(frame_facil_minutos, width=8, justify="center")
+    entrada_facil_minutos.insert(0, str(tiempos_multinivel.get("facil", {}).get("minutos", 0)))
+    entrada_facil_minutos.pack()
+    
+    frame_facil_segundos = tk.Frame(frame_facil)
+    frame_facil_segundos.pack(side=tk.LEFT, expand=True, padx=5, pady=5)
+    label_facil_segundos = tk.Label(frame_facil_segundos, text="Segundos")
+    label_facil_segundos.pack()
+    entrada_facil_segundos = tk.Entry(frame_facil_segundos, width=8, justify="center")
+    entrada_facil_segundos.insert(0, str(tiempos_multinivel.get("facil", {}).get("segundos", 0)))
+    entrada_facil_segundos.pack()
+    
+    #Nivel Intermedio
+    frame_intermedio = tk.LabelFrame(frame_timer_multinivel, text="Nivel Intermedio", font=("Arial", 9, "bold"))
+    frame_intermedio.pack(fill=tk.X, padx=10, pady=5)
+    
+    frame_intermedio_horas = tk.Frame(frame_intermedio)
+    frame_intermedio_horas.pack(side=tk.LEFT, expand=True, padx=5, pady=5)
+    label_intermedio_horas = tk.Label(frame_intermedio_horas, text="Horas")
+    label_intermedio_horas.pack()
+    entrada_intermedio_horas = tk.Entry(frame_intermedio_horas, width=8, justify="center")
+    entrada_intermedio_horas.insert(0, str(tiempos_multinivel.get("intermedio", {}).get("horas", 0)))
+    entrada_intermedio_horas.pack()
+    
+    frame_intermedio_minutos = tk.Frame(frame_intermedio)
+    frame_intermedio_minutos.pack(side=tk.LEFT, expand=True, padx=5, pady=5)
+    label_intermedio_minutos = tk.Label(frame_intermedio_minutos, text="Minutos")
+    label_intermedio_minutos.pack()
+    entrada_intermedio_minutos = tk.Entry(frame_intermedio_minutos, width=8, justify="center")
+    entrada_intermedio_minutos.insert(0, str(tiempos_multinivel.get("intermedio", {}).get("minutos", 0)))
+    entrada_intermedio_minutos.pack()
+    
+    frame_intermedio_segundos = tk.Frame(frame_intermedio)
+    frame_intermedio_segundos.pack(side=tk.LEFT, expand=True, padx=5, pady=5)
+    label_intermedio_segundos = tk.Label(frame_intermedio_segundos, text="Segundos")
+    label_intermedio_segundos.pack()
+    entrada_intermedio_segundos = tk.Entry(frame_intermedio_segundos, width=8, justify="center")
+    entrada_intermedio_segundos.insert(0, str(tiempos_multinivel.get("intermedio", {}).get("segundos", 0)))
+    entrada_intermedio_segundos.pack()
+    
+    #Nivel Dificil
+    frame_dificil = tk.LabelFrame(frame_timer_multinivel, text="Nivel Dificil", font=("Arial", 9, "bold"))
+    frame_dificil.pack(fill=tk.X, padx=10, pady=5)
+    
+    frame_dificil_horas = tk.Frame(frame_dificil)
+    frame_dificil_horas.pack(side=tk.LEFT, expand=True, padx=5, pady=5)
+    label_dificil_horas = tk.Label(frame_dificil_horas, text="Horas")
+    label_dificil_horas.pack()
+    entrada_dificil_horas = tk.Entry(frame_dificil_horas, width=8, justify="center")
+    entrada_dificil_horas.insert(0, str(tiempos_multinivel.get("dificil", {}).get("horas", 0)))
+    entrada_dificil_horas.pack()
+    
+    frame_dificil_minutos = tk.Frame(frame_dificil)
+    frame_dificil_minutos.pack(side=tk.LEFT, expand=True, padx=5, pady=5)
+    label_dificil_minutos = tk.Label(frame_dificil_minutos, text="Minutos")
+    label_dificil_minutos.pack()
+    entrada_dificil_minutos = tk.Entry(frame_dificil_minutos, width=8, justify="center")
+    entrada_dificil_minutos.insert(0, str(tiempos_multinivel.get("dificil", {}).get("minutos", 0)))
+    entrada_dificil_minutos.pack()
+    
+    frame_dificil_segundos = tk.Frame(frame_dificil)
+    frame_dificil_segundos.pack(side=tk.LEFT, expand=True, padx=5, pady=5)
+    label_dificil_segundos = tk.Label(frame_dificil_segundos, text="Segundos")
+    label_dificil_segundos.pack()
+    entrada_dificil_segundos = tk.Entry(frame_dificil_segundos, width=8, justify="center")
+    entrada_dificil_segundos.insert(0, str(tiempos_multinivel.get("dificil", {}).get("segundos", 0)))
+    entrada_dificil_segundos.pack()
+    
+    #Aplicar estado inicial de los campos
+    actualizar_estado_timer_multinivel()
+    
+    #Asignar trace a las variables de nivel y reloj
+    variable_nivel.trace('w', actualizar_estado_timer_multinivel)
+    variable_reloj.trace('w', actualizar_estado_timer_multinivel)
+    
+    #====================TOP X====================
     frame_top_x = tk.LabelFrame(frame_scrollable, text="TOP X", font=("Arial", 12, "bold"))
     frame_top_x.pack(fill=tk.X, padx=20, pady=10)
     
@@ -1782,16 +1979,15 @@ def crear_ventana_configuracion(ventana_principal):
     etiqueta_top_x.pack(side=tk.LEFT, padx=5)
     
     entrada_top_x = tk.Entry(frame_top_x_valor, width=5, justify="center")
-    entrada_top_x.insert(0, str(config_actual.get("top_x", 0)))
+    entrada_top_x.insert(0, str(top_x_default))
     entrada_top_x.pack(side=tk.LEFT, padx=5)
     
     #====================PANEL DE ELEMENTOS====================
     frame_elementos = tk.LabelFrame(frame_scrollable, text="ELEMENTOS", font=("Arial", 12, "bold"))
     frame_elementos.pack(fill=tk.X, padx=20, pady=10)
     
-    variable_elementos = tk.StringVar(value=config_actual.get("elementos", "numeros"))
+    variable_elementos = tk.StringVar(value=elementos_default)
     
-    #Tabla de equivalencias
     frame_tabla_equivalencias = tk.Frame(frame_elementos)
     frame_tabla_equivalencias.pack(pady=10)
     
@@ -1804,8 +2000,6 @@ def crear_ventana_configuracion(ventana_principal):
     etiqueta_personalizados = tk.Label(frame_tabla_equivalencias, text="Personalizados", font=("Arial", 10, "bold"))
     etiqueta_personalizados.grid(row=0, column=2, padx=20)
     
-    #Crear entradas para elementos personalizados
-    elementos_personalizados_guardados = config_actual.get("elementos_personalizados", [])
     entradas_personalizados = []
     for i in range(1, 10):
         etiqueta_numero = tk.Label(frame_tabla_equivalencias, text=str(i))
@@ -1821,7 +2015,6 @@ def crear_ventana_configuracion(ventana_principal):
             entrada_pers.insert(0, elementos_personalizados_guardados[i-1])
         entradas_personalizados.append(entrada_pers)
     
-    #Radio buttons
     opcion_numeros = tk.Radiobutton(frame_elementos, text="Usar Numeros (1-9)", variable=variable_elementos, value="numeros")
     opcion_numeros.pack(anchor=tk.W, padx=20, pady=5)
     
@@ -1831,7 +2024,6 @@ def crear_ventana_configuracion(ventana_principal):
     opcion_personalizados = tk.Radiobutton(frame_elementos, text="Definido por el jugador", variable=variable_elementos, value="personalizados")
     opcion_personalizados.pack(anchor=tk.W, padx=20, pady=5)
     
-    #Funcion para habilitar/deshabilitar entradas
     def actualizar_estado_entradas(*args):
         if variable_elementos.get() == "personalizados":
             for entrada in entradas_personalizados:
@@ -1861,26 +2053,66 @@ def crear_ventana_configuracion(ventana_principal):
             return
         
         if reloj_seleccionado == "timer":
-            try:
-                horas_timer = int(entrada_horas.get())
-                minutos_timer = int(entrada_minutos.get())
-                segundos_timer = int(entrada_segundos.get())
-                
-                if horas_timer < 0 or horas_timer > 4:
-                    messagebox.showerror("Error", "Las horas deben estar entre 0 y 4")
+            if nivel_seleccionado == "multinivel":
+                #Validar timer multinivel
+                try:
+                    #Facil
+                    f_h = int(entrada_facil_horas.get())
+                    f_m = int(entrada_facil_minutos.get())
+                    f_s = int(entrada_facil_segundos.get())
+                    if f_h < 0 or f_h > 4 or f_m < 0 or f_m > 59 or f_s < 0 or f_s > 59:
+                        messagebox.showerror("Error", "Valores invalidos para nivel Facil (Horas:0-4, Min:0-59, Seg:0-59)")
+                        return
+                    if f_h == 0 and f_m == 0 and f_s == 0:
+                        messagebox.showerror("Error", "El timer para nivel Facil debe tener al menos un valor mayor a cero")
+                        return
+                    
+                    #Intermedio
+                    i_h = int(entrada_intermedio_horas.get())
+                    i_m = int(entrada_intermedio_minutos.get())
+                    i_s = int(entrada_intermedio_segundos.get())
+                    if i_h < 0 or i_h > 4 or i_m < 0 or i_m > 59 or i_s < 0 or i_s > 59:
+                        messagebox.showerror("Error", "Valores invalidos para nivel Intermedio (Horas:0-4, Min:0-59, Seg:0-59)")
+                        return
+                    if i_h == 0 and i_m == 0 and i_s == 0:
+                        messagebox.showerror("Error", "El timer para nivel Intermedio debe tener al menos un valor mayor a cero")
+                        return
+                    
+                    #Dificil
+                    d_h = int(entrada_dificil_horas.get())
+                    d_m = int(entrada_dificil_minutos.get())
+                    d_s = int(entrada_dificil_segundos.get())
+                    if d_h < 0 or d_h > 4 or d_m < 0 or d_m > 59 or d_s < 0 or d_s > 59:
+                        messagebox.showerror("Error", "Valores invalidos para nivel Dificil (Horas:0-4, Min:0-59, Seg:0-59)")
+                        return
+                    if d_h == 0 and d_m == 0 and d_s == 0:
+                        messagebox.showerror("Error", "El timer para nivel Dificil debe tener al menos un valor mayor a cero")
+                        return
+                except ValueError:
+                    messagebox.showerror("Error", "Todos los valores del timer multinivel deben ser numeros enteros")
                     return
-                if minutos_timer < 0 or minutos_timer > 59:
-                    messagebox.showerror("Error", "Los minutos deben estar entre 0 y 59")
+            else:
+                #Validar timer normal (solo si NO es multinivel)
+                try:
+                    horas_timer = int(entrada_horas.get())
+                    minutos_timer = int(entrada_minutos.get())
+                    segundos_timer = int(entrada_segundos.get())
+                    
+                    if horas_timer < 0 or horas_timer > 4:
+                        messagebox.showerror("Error", "Las horas deben estar entre 0 y 4")
+                        return
+                    if minutos_timer < 0 or minutos_timer > 59:
+                        messagebox.showerror("Error", "Los minutos deben estar entre 0 y 59")
+                        return
+                    if segundos_timer < 0 or segundos_timer > 59:
+                        messagebox.showerror("Error", "Los segundos deben estar entre 0 y 59")
+                        return
+                    if horas_timer == 0 and minutos_timer == 0 and segundos_timer == 0:
+                        messagebox.showerror("Error", "El timer debe tener al menos un valor mayor a cero")
+                        return
+                except ValueError:
+                    messagebox.showerror("Error", "Horas, minutos y segundos deben ser numeros enteros")
                     return
-                if segundos_timer < 0 or segundos_timer > 59:
-                    messagebox.showerror("Error", "Los segundos deben estar entre 0 y 59")
-                    return
-                if horas_timer == 0 and minutos_timer == 0 and segundos_timer == 0:
-                    messagebox.showerror("Error", "El timer debe tener al menos un valor mayor a cero")
-                    return
-            except ValueError:
-                messagebox.showerror("Error", "Horas, minutos y segundos deben ser numeros enteros")
-                return
         
         #Validar elementos personalizados si están seleccionados
         elementos_personalizados = []
@@ -1908,11 +2140,30 @@ def crear_ventana_configuracion(ventana_principal):
             datos_configuracion["elementos_personalizados"] = elementos_personalizados
         
         if reloj_seleccionado == "timer":
-            datos_configuracion["tiempo_inicial"] = {
-                "horas": int(entrada_horas.get()),
-                "minutos": int(entrada_minutos.get()),
-                "segundos": int(entrada_segundos.get())
-            }
+            if nivel_seleccionado == "multinivel":
+                datos_configuracion["tiempos_multinivel"] = {
+                    "facil": {
+                        "horas": int(entrada_facil_horas.get()),
+                        "minutos": int(entrada_facil_minutos.get()),
+                        "segundos": int(entrada_facil_segundos.get())
+                    },
+                    "intermedio": {
+                        "horas": int(entrada_intermedio_horas.get()),
+                        "minutos": int(entrada_intermedio_minutos.get()),
+                        "segundos": int(entrada_intermedio_segundos.get())
+                    },
+                    "dificil": {
+                        "horas": int(entrada_dificil_horas.get()),
+                        "minutos": int(entrada_dificil_minutos.get()),
+                        "segundos": int(entrada_dificil_segundos.get())
+                    }
+                }
+            else:
+                datos_configuracion["tiempo_inicial"] = {
+                    "horas": int(entrada_horas.get()),
+                    "minutos": int(entrada_minutos.get()),
+                    "segundos": int(entrada_segundos.get())
+                }
         
         directorio_script = obtener_directorio_script()
         nombre_archivo = os.path.join(directorio_script, "sudoku2026configuracion.json")
@@ -1953,7 +2204,16 @@ def crear_ventana_principal(ventana_principal, usuario):
     label_correo.pack()
     
     def accion_boton_jugar():
-        crear_ventana_juego(ventana_principal, usuario)
+        directorio_script = obtener_directorio_script()
+        archivo_config = os.path.join(directorio_script, "sudoku2026configuracion.json")
+        with open(archivo_config, "r") as archivo:
+            config_actual = json.load(archivo)
+        
+        nivel_inicial = config_actual.get("nivel", "facil")
+        if nivel_inicial == "multinivel":
+            nivel_inicial = "facil"
+        
+        crear_ventana_juego(ventana_principal, usuario, nivel_inicial)
     
     def accion_boton_configurar():
         crear_ventana_configuracion(ventana_principal)
@@ -1989,15 +2249,11 @@ def crear_ventana_principal(ventana_principal, usuario):
 #Funcion:Inicia la aplicacion
 def main():
     resetear_configuracion_a_default()
-    
-    #Vaciar el historial de partidas al iniciar el programa
     vaciar_historial_partidas()
     
-    #Crear ventana principal oculta
     ventana_principal = tk.Tk()
     ventana_principal.withdraw()
     
-    #Mostrar login
     mostrar_login(ventana_principal)
     
     tk.mainloop()
