@@ -272,7 +272,7 @@ def resetear_configuracion_a_default():
     
     return configuracion_default
 
-#====================FUNCIONES DE USUARIOS====================
+#====================FUNCIONES DE USUARIOS (CORREGIDAS)====================
 
 #E:ninguna
 #S:list - Lista de usuarios del archivo usuarios.json
@@ -282,12 +282,39 @@ def cargar_usuarios():
     archivo = os.path.join(directorio, "usuarios.json")
     
     if not os.path.exists(archivo):
-        with open(archivo, "w") as f:
-            json.dump([], f)
+        with open(archivo, "w", encoding='utf-8') as f:
+            json.dump([], f, indent=4)
         return []
     
-    with open(archivo, "r") as f:
-        return json.load(f)
+    try:
+        #Intentar leer con utf-8-sig para manejar BOM
+        with open(archivo, "r", encoding='utf-8-sig') as f:
+            contenido = f.read().strip()
+            if not contenido:
+                with open(archivo, "w", encoding='utf-8') as f2:
+                    json.dump([], f2, indent=4)
+                return []
+            return json.loads(contenido)
+    except json.JSONDecodeError as e:
+        print(f"Error JSON en usuarios.json: {e}")
+        #Intentar reparar
+        try:
+            with open(archivo, "r", encoding='utf-8') as f:
+                contenido = f.read()
+                #Intentar limpiar caracteres especiales
+                import re
+                contenido = re.sub(r'[\x00-\x1f\x7f-\x9f]', '', contenido)
+                if contenido.strip():
+                    return json.loads(contenido)
+        except:
+            pass
+        #Si falla, reiniciar el archivo
+        with open(archivo, "w", encoding='utf-8') as f:
+            json.dump([], f, indent=4)
+        return []
+    except Exception as e:
+        print(f"Error al cargar usuarios: {e}")
+        return []
 
 #E:list usuarios - Lista de usuarios a guardar
 #S:None
@@ -296,8 +323,11 @@ def guardar_usuarios(usuarios):
     directorio = obtener_directorio_script()
     archivo = os.path.join(directorio, "usuarios.json")
     
-    with open(archivo, "w") as f:
-        json.dump(usuarios, f, indent=4)
+    try:
+        with open(archivo, "w", encoding='utf-8') as f:
+            json.dump(usuarios if usuarios else [], f, indent=4, ensure_ascii=False)
+    except Exception as e:
+        print(f"Error al guardar usuarios: {e}")
 
 #E:str correo - Correo electrónico a validar
 #S:bool - True si el correo tiene formato válido, False en caso contrario
@@ -399,28 +429,36 @@ def actualizar_nombre_usuario(correo, nombre):
 #S:bool - True si se elimino correctamente, False en caso contrario
 #Funcion:Elimina un usuario del archivo usuarios.json por su correo
 def eliminar_usuario_por_correo(correo):
-    usuarios = cargar_usuarios()
-    for i, usuario in enumerate(usuarios):
-        if usuario["correo"].lower() == correo.lower():
-            del usuarios[i]
-            guardar_usuarios(usuarios)
-            return True
-    return False
+    try:
+        usuarios = cargar_usuarios()
+        for i, usuario in enumerate(usuarios):
+            if usuario["correo"].lower() == correo.lower():
+                del usuarios[i]
+                guardar_usuarios(usuarios)
+                return True
+        return False
+    except Exception as e:
+        print(f"Error al eliminar usuario: {e}")
+        return False
 
 #E:str nombre - Nombre del usuario a eliminar de la bitacora
 #S:bool - True si se elimino al menos una partida
 #Funcion:Elimina todas las partidas de un usuario de los arboles ABB
 def eliminar_usuario_de_bitacora(nombre):
-    abb_facil, abb_intermedio, abb_dificil = cargar_arboles_bitacora()
-    
-    eliminados_facil = abb_facil.eliminar_usuario(nombre)
-    eliminados_intermedio = abb_intermedio.eliminar_usuario(nombre)
-    eliminados_dificil = abb_dificil.eliminar_usuario(nombre)
-    
-    #Guardar los arboles actualizados
-    guardar_arboles_bitacora(abb_facil, abb_intermedio, abb_dificil)
-    
-    return eliminados_facil or eliminados_intermedio or eliminados_dificil
+    try:
+        abb_facil, abb_intermedio, abb_dificil = cargar_arboles_bitacora()
+        
+        eliminados_facil = abb_facil.eliminar_usuario(nombre)
+        eliminados_intermedio = abb_intermedio.eliminar_usuario(nombre)
+        eliminados_dificil = abb_dificil.eliminar_usuario(nombre)
+        
+        #Guardar los arboles actualizados
+        guardar_arboles_bitacora(abb_facil, abb_intermedio, abb_dificil)
+        
+        return eliminados_facil or eliminados_intermedio or eliminados_dificil
+    except Exception as e:
+        print(f"Error al eliminar usuario de bitacora: {e}")
+        return False
 
 #====================FUNCIONES DE GENERACION DE SUDOKU====================
 
@@ -471,9 +509,9 @@ def eliminar_celdas(tablero, dificultad):
     copia = [fila[:] for fila in tablero]
     
     eliminaciones = {
-        "facil": 25,
-        "intermedio": 35,
-        "dificil": 45
+        "facil": 15,
+        "intermedio": 20,
+        "dificil": 25
     }
     
     cantidad = eliminaciones.get(dificultad, 15)
@@ -2013,6 +2051,7 @@ def crear_ventana_juego(ventana_principal, usuario, nivel_inicial="facil"):
 #====================VENTANA DE CONFIGURACION====================
 
 #E:tk.Tk ventana_principal - Ventana principal del menu
+#E:dict usuario_actual - Usuario actual autenticado (opcional)
 #S:None
 #Funcion:Crea y muestra la ventana de configuracion
 def crear_ventana_configuracion(ventana_principal, usuario_actual=None):

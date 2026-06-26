@@ -127,16 +127,9 @@
     },
     {
         "id": 21,
-        "correo": "holap@gmail.com",
-        "codigo_ingreso": "fc28bc436dde26cd3c08428f880527b6a4c0ecb84ef8d8f2b0c4fd623d5a894a",
-        "nombre": "",
-        "fecha_creacion": "2026-06-25T21:10:05.943514"
-    },
-    {
-        "id": 22,
-        "correo": "tung@gmail.com",
-        "codigo_ingreso": "3b44b3e9f3d8e14d5f4e8b61cd3b0208c104d398f0145df216c9caf44e45b998",
-        "nombre": "mae",
-        "fecha_creacion": "2026-06-25T21:12:30.724390"
+        "correo": "tralalero@gmail.com",
+        "codigo_ingreso": "6df5d78fd5104627ab92c4fbfc45ac07aebe9dbfe6caf9ce4171058d06a248be",
+        "nombre": "tralala",
+        "fecha_creacion": "2026-06-25T21:25:34.832842"
     }
 ]
