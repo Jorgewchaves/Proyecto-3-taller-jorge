@@ -471,9 +471,9 @@ def eliminar_celdas(tablero, dificultad):
     copia = [fila[:] for fila in tablero]
     
     eliminaciones = {
-        "facil": 15,
-        "intermedio": 20,
-        "dificil": 25
+        "facil": 25,
+        "intermedio": 35,
+        "dificil": 45
     }
     
     cantidad = eliminaciones.get(dificultad, 15)

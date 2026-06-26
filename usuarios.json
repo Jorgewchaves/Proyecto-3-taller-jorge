@@ -110,5 +110,19 @@
         "codigo_ingreso": "252fdc37cda89cb6266813070c6c48218bd9f1024aca4aca020db4e8773a3938",
         "nombre": "odindindindindun",
         "fecha_creacion": "2026-06-25T17:17:12.670988"
+    },
+    {
+        "id": 19,
+        "correo": "hey@gmail.com",
+        "codigo_ingreso": "dd8bbf43fd1aca887a819c59b152a542ac02e2b99ce926f599834d1f7a565608",
+        "nombre": "heya",
+        "fecha_creacion": "2026-06-25T20:53:40.430126"
+    },
+    {
+        "id": 20,
+        "correo": "jiji@gmail.com",
+        "codigo_ingreso": "4e47a4bfd79b93d83f15a18c003397f1bb91b63ca842834b1125a17a69bd01dc",
+        "nombre": "a",
+        "fecha_creacion": "2026-06-25T20:58:14.989871"
     }
 ]
