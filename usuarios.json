@@ -28,20 +28,6 @@
         "fecha_creacion": "2026-06-24T14:28:08.840313"
     },
     {
-        "id": 5,
-        "correo": "alexa@gmail.com",
-        "codigo_ingreso": "d8a9b45a33872aeeae76cd60677f21a86475b7a004d1d488f22e5c933a19de52",
-        "nombre": "roberto",
-        "fecha_creacion": "2026-06-24T20:44:56.704169"
-    },
-    {
-        "id": 6,
-        "correo": "fabi@gmail.com",
-        "codigo_ingreso": "c30c8871d8225b73e5be7f87d044b01b12c8684c88caa0bf17382f80f80d4a87",
-        "nombre": "",
-        "fecha_creacion": "2026-06-24T20:55:15.234764"
-    },
-    {
         "id": 7,
         "correo": "laskdo@gmail.com",
         "codigo_ingreso": "43a025ca46d6118dd6464ac07f456b7e5185b3ebea9b8cee2d6b4af1d084ad87",
@@ -66,7 +52,7 @@
         "id": 10,
         "correo": "yo@gmail.com",
         "codigo_ingreso": "b2cd7d2226dfc5a75653c45f58f2417a3695eab71c59b966e679a8e145f8f806",
-        "nombre": "",
+        "nombre": "yoporolo",
         "fecha_creacion": "2026-06-25T14:10:12.658513"
     },
     {

@@ -9,6 +9,7 @@ import hashlib
 import re
 import sys
 import pickle
+import subprocess
 
 #intentar importar reportlab
 try:
@@ -150,6 +151,82 @@ class ABB:
         if limite <= 0 or limite >= len(todos):
             return todos
         return todos[:limite]
+    
+    #E:str nombre_usuario - nombre del usuario a eliminar
+    #S:bool - True si se elimino al menos un nodo
+    #Funcion:Elimina todos los nodos que pertenezcan al usuario especificado
+    def eliminar_usuario(self, nombre_usuario):
+        eliminados = False
+        self.raiz, eliminados = self._eliminar_recursivo(self.raiz, nombre_usuario)
+        return eliminados
+    
+    #E:NodoABB nodo - nodo actual, str nombre_usuario - usuario a eliminar
+    #S:tuple - (NodoABB nuevo_nodo, bool eliminado)
+    #Funcion:Funcion recursiva para eliminar nodos de un usuario especifico
+    def _eliminar_recursivo(self, nodo, nombre_usuario):
+        if nodo is None:
+            return None, False
+        
+        eliminado = False
+        
+        #Eliminar del subarbol izquierdo
+        nodo.izquierdo, elim_izq = self._eliminar_recursivo(nodo.izquierdo, nombre_usuario)
+        if elim_izq:
+            eliminado = True
+        
+        #Eliminar del subarbol derecho
+        nodo.derecho, elim_der = self._eliminar_recursivo(nodo.derecho, nombre_usuario)
+        if elim_der:
+            eliminado = True
+        
+        #Verificar si el nodo actual pertenece al usuario
+        if nodo.partida.jugador == nombre_usuario:
+            #Este nodo debe ser eliminado
+            #Fusionar los subarboles izquierdo y derecho
+            if nodo.izquierdo is None:
+                return nodo.derecho, True
+            if nodo.derecho is None:
+                return nodo.izquierdo, True
+            
+            #Tiene ambos hijos: encontrar el minimo del subarbol derecho
+            sucesor = self._encontrar_minimo(nodo.derecho)
+            #Reemplazar la partida del nodo actual con la del sucesor
+            nodo.partida = sucesor.partida
+            #Eliminar el sucesor del subarbol derecho
+            nodo.derecho = self._eliminar_nodo_especifico(nodo.derecho, sucesor)
+            return nodo, True
+        
+        return nodo, eliminado
+    
+    #E:NodoABB nodo - nodo actual, NodoABB nodo_a_eliminar - nodo a eliminar por referencia
+    #S:NodoABB - nuevo nodo raiz del subarbol
+    #Funcion:Elimina un nodo especifico por referencia (no por nombre)
+    def _eliminar_nodo_especifico(self, nodo, nodo_a_eliminar):
+        if nodo is None:
+            return None
+        if nodo is nodo_a_eliminar:
+            #Fusionar hijos
+            if nodo.izquierdo is None:
+                return nodo.derecho
+            if nodo.derecho is None:
+                return nodo.izquierdo
+            #Tiene ambos hijos
+            sucesor = self._encontrar_minimo(nodo.derecho)
+            nodo.partida = sucesor.partida
+            nodo.derecho = self._eliminar_nodo_especifico(nodo.derecho, sucesor)
+            return nodo
+        
+        nodo.izquierdo = self._eliminar_nodo_especifico(nodo.izquierdo, nodo_a_eliminar)
+        nodo.derecho = self._eliminar_nodo_especifico(nodo.derecho, nodo_a_eliminar)
+        return nodo
+    
+    #E:NodoABB nodo - nodo actual
+    #S:NodoABB - nodo con el valor minimo (mas a la izquierda)
+    #Funcion:Encuentra el nodo con el valor minimo en el arbol (el mas a la izquierda)
+    def _encontrar_minimo(self, nodo):
+        while nodo.izquierdo is not None:
+            nodo = nodo.izquierdo
+        return nodo
 
 #====================FUNCIONES BASICAS====================
 
@@ -318,6 +395,33 @@ def actualizar_nombre_usuario(correo, nombre):
             return True
     return False
 
+#E:str correo - Correo del usuario a eliminar
+#S:bool - True si se elimino correctamente, False en caso contrario
+#Funcion:Elimina un usuario del archivo usuarios.json por su correo
+def eliminar_usuario_por_correo(correo):
+    usuarios = cargar_usuarios()
+    for i, usuario in enumerate(usuarios):
+        if usuario["correo"].lower() == correo.lower():
+            del usuarios[i]
+            guardar_usuarios(usuarios)
+            return True
+    return False
+
+#E:str nombre - Nombre del usuario a eliminar de la bitacora
+#S:bool - True si se elimino al menos una partida
+#Funcion:Elimina todas las partidas de un usuario de los arboles ABB
+def eliminar_usuario_de_bitacora(nombre):
+    abb_facil, abb_intermedio, abb_dificil = cargar_arboles_bitacora()
+    
+    eliminados_facil = abb_facil.eliminar_usuario(nombre)
+    eliminados_intermedio = abb_intermedio.eliminar_usuario(nombre)
+    eliminados_dificil = abb_dificil.eliminar_usuario(nombre)
+    
+    #Guardar los arboles actualizados
+    guardar_arboles_bitacora(abb_facil, abb_intermedio, abb_dificil)
+    
+    return eliminados_facil or eliminados_intermedio or eliminados_dificil
+
 #====================FUNCIONES DE GENERACION DE SUDOKU====================
 
 #E:ninguna
@@ -362,19 +466,17 @@ def generar_sudoku_valido():
 #E:list tablero - Tablero de Sudoku resuelto
 #E:str dificultad - Nivel de dificultad ("facil","intermedio","dificil")
 #S:list - Tablero con celdas eliminadas según la dificultad
-#Funcion:Elimina celdas del tablero segun la dificultad (5 celdas para pruebas)
-#TODAS las dificultades eliminan solo 5 celdas para facilitar las pruebas
+#Funcion:Elimina celdas del tablero segun la dificultad (15,20,25 celdas respectivamente)
 def eliminar_celdas(tablero, dificultad):
     copia = [fila[:] for fila in tablero]
     
-    #PARA PRUEBAS: todas las dificultades eliminan solo 5 celdas
     eliminaciones = {
-        "facil": 5,
-        "intermedio": 5,
-        "dificil": 5
+        "facil": 15,
+        "intermedio": 20,
+        "dificil": 25
     }
     
-    cantidad = eliminaciones.get(dificultad, 5)
+    cantidad = eliminaciones.get(dificultad, 15)
     
     posiciones = [(f, c) for f in range(9) for c in range(9)]
     random.shuffle(posiciones)
@@ -821,7 +923,6 @@ def mostrar_acerca_de():
 #S:None
 #Funcion:Muestra la ventana de inicio de sesión y al autenticar, crea la ventana principal
 def mostrar_login(ventana_principal):
-    print("=== mostrar_login: iniciando ===")
     ventana_principal.withdraw()
     
     ventana_login = tk.Toplevel(ventana_principal)
@@ -862,10 +963,8 @@ def mostrar_login(ventana_principal):
     label_estado.pack(pady=(0, 10))
     
     def manejar_ingreso():
-        print("=== manejar_ingreso: iniciando ===")
         correo = entrada_correo.get().strip()
         codigo = entrada_codigo.get().strip()
-        print(f"Correo: {correo}, Codigo: {codigo}")
         
         if not correo:
             label_estado.config(text="Debe ingresar un correo electronico", fg="red")
@@ -879,7 +978,6 @@ def mostrar_login(ventana_principal):
             return
         
         usuario = obtener_usuario_por_correo(correo)
-        print(f"Usuario encontrado: {usuario}")
         
         if not usuario:
             respuesta = messagebox.askyesno(
@@ -930,7 +1028,6 @@ def mostrar_login(ventana_principal):
         
         codigo_hash = hashear_codigo(codigo)
         if usuario_verificar["codigo_ingreso"] == codigo_hash:
-            print("=== Codigo correcto, cerrando login y creando ventana principal ===")
             ventana_login.destroy()
             ventana_principal.deiconify()
             crear_ventana_principal(ventana_principal, usuario_verificar)
@@ -960,7 +1057,6 @@ def mostrar_login(ventana_principal):
     ventana_login.protocol("WM_DELETE_WINDOW", cerrar_login)
     
     entrada_correo.focus()
-    print("=== mostrar_login: ventana creada ===")
 
 #====================VENTANA DE JUEGO====================
 
@@ -970,19 +1066,14 @@ def mostrar_login(ventana_principal):
 #S:None
 #Funcion:Crea y muestra la ventana de juego con el usuario autenticado y nivel especificado
 def crear_ventana_juego(ventana_principal, usuario, nivel_inicial="facil"):
-    print(f"=== crear_ventana_juego: iniciando con nivel_inicial={nivel_inicial} ===")
-    print(f"usuario: {usuario}")
-    
     try:
         directorio_script = obtener_directorio_script()
         archivo_config = os.path.join(directorio_script, "sudoku2026configuracion.json")
         archivo_partidas_guardadas = os.path.join(directorio_script, "sudoku2026juegoactual.json")
         
         #Leer configuracion
-        print("Leyendo configuracion...")
         with open(archivo_config, "r") as archivo:
             configuracion_actual = json.load(archivo)
-        print(f"Configuracion leida: {configuracion_actual}")
         
         nivel_actual = nivel_inicial
         tipo_elementos = configuracion_actual.get("elementos", "numeros")
@@ -1004,14 +1095,11 @@ def crear_ventana_juego(ventana_principal, usuario, nivel_inicial="facil"):
         else:
             tiempo_inicial = configuracion_actual.get("tiempo_inicial", {"horas": 0, "minutos": 0, "segundos": 0})
         
-        #Verificar si el usuario tiene nombre
+        #Verificar si el usuario tiene nombre ANTES de generar el tablero y crear la ventana
         nombre_jugador = usuario.get("nombre", "")
-        print(f"nombre_jugador: '{nombre_jugador}'")
         
         #Si el usuario no tiene nombre, mostrar ventana para ingresarlo y SALIR
         if not nombre_jugador or nombre_jugador == "":
-            print("El usuario no tiene nombre, mostrando ventana para ingresar nombre")
-            
             #CREAR UNA VENTANA NUEVA INDEPENDIENTE (Tk) PARA EL NOMBRE
             ventana_nombre = tk.Tk()
             ventana_nombre.title("Nombre de usuario")
@@ -1028,8 +1116,6 @@ def crear_ventana_juego(ventana_principal, usuario, nivel_inicial="facil"):
             ventana_nombre.lift()
             ventana_nombre.focus_force()
             
-            print("Ventana de nombre creada, mostrando...")
-            
             frame_nombre = tk.Frame(ventana_nombre, padx=30, pady=30)
             frame_nombre.pack(fill=tk.BOTH, expand=True)
             
@@ -1044,7 +1130,6 @@ def crear_ventana_juego(ventana_principal, usuario, nivel_inicial="facil"):
             
             def guardar_nombre():
                 nombre = entrada_nombre.get().strip()
-                print(f"Guardando nombre: '{nombre}'")
                 if not validar_nombre(nombre):
                     label_estado_nombre.config(text="El nombre debe tener 1-30 caracteres (letras, numeros y espacios)")
                     return
@@ -1055,9 +1140,7 @@ def crear_ventana_juego(ventana_principal, usuario, nivel_inicial="facil"):
                 
                 if actualizar_nombre_usuario(usuario["correo"], nombre):
                     usuario["nombre"] = nombre
-                    print(f"Nombre guardado exitosamente: '{nombre}'")
-                    ventana_nombre.destroy()  #Cerrar la ventana de nombre
-                    print(f"Llamando recursivamente a crear_ventana_juego con nivel_actual={nivel_actual}")
+                    ventana_nombre.destroy()
                     crear_ventana_juego(ventana_principal, usuario, nivel_actual)
                 else:
                     label_estado_nombre.config(text="Error al guardar el nombre")
@@ -1070,18 +1153,14 @@ def crear_ventana_juego(ventana_principal, usuario, nivel_inicial="facil"):
             
             #Iniciar el loop de la ventana de nombre
             ventana_nombre.mainloop()
-            
-            print("=== crear_ventana_juego: retornando despues de ventana de nombre ===")
-            return  #Salir de la funcion, la ventana de juego se creara en la llamada recursiva
+            return
         
         #============================================
         #A PARTIR DE AQUI EL USUARIO TIENE NOMBRE
         #============================================
-        print("El usuario tiene nombre, generando tablero...")
         
         #Generar la partida SOLO si el usuario tiene nombre
         tablero_juego, tablero_solucion = generar_partida_unica(nivel_actual)
-        print("Tablero generado correctamente")
         
         partida_cargada = {}
         for fila in range(9):
@@ -1148,12 +1227,10 @@ def crear_ventana_juego(ventana_principal, usuario, nivel_inicial="facil"):
             matriz_fijos[fila][columna] = True
         
         #Crear la ventana de juego
-        print("Creando ventana de juego...")
         ventana_juego = tk.Toplevel(ventana_principal)
         ventana_juego.title("Sudoku - Juego")
         ventana_juego.geometry("950x800")
         ventana_juego.resizable(False, False)
-        print("Ventana de juego creada")
         
         def pausar_temporizador():
             nonlocal temporizador_activo
@@ -1927,10 +2004,8 @@ def crear_ventana_juego(ventana_principal, usuario, nivel_inicial="facil"):
         lista_botones_accion.append(boton_top_x)
         
         ventana_principal.withdraw()
-        print("=== crear_ventana_juego: ventana de juego creada exitosamente ===")
         
     except Exception as e:
-        print(f"=== ERROR en crear_ventana_juego: {e} ===")
         import traceback
         traceback.print_exc()
         messagebox.showerror("Error", f"Error al crear la ventana de juego:\n{str(e)}")
@@ -1940,10 +2015,10 @@ def crear_ventana_juego(ventana_principal, usuario, nivel_inicial="facil"):
 #E:tk.Tk ventana_principal - Ventana principal del menu
 #S:None
 #Funcion:Crea y muestra la ventana de configuracion
-def crear_ventana_configuracion(ventana_principal):
+def crear_ventana_configuracion(ventana_principal, usuario_actual=None):
     ventana_configuracion = tk.Toplevel(ventana_principal)
     ventana_configuracion.title("Sudoku - Configuracion")
-    ventana_configuracion.geometry("600x850")
+    ventana_configuracion.geometry("600x900")
     ventana_configuracion.resizable(False, False)
     
     def on_cerrar_configuracion():
@@ -2246,6 +2321,68 @@ def crear_ventana_configuracion(ventana_principal):
     variable_elementos.trace('w', actualizar_estado_entradas)
     actualizar_estado_entradas()
     
+    #====================ELIMINAR HISTORIAL DE USUARIO====================
+    if usuario_actual is not None:
+        nombre_usuario = usuario_actual.get("nombre", "")
+        if nombre_usuario and nombre_usuario != "":
+            frame_eliminar = tk.LabelFrame(frame_scrollable, text="ELIMINAR HISTORIAL", font=("Arial", 12, "bold"))
+            frame_eliminar.pack(fill=tk.X, padx=20, pady=10)
+            
+            label_eliminar_info = tk.Label(frame_eliminar, 
+                text=f"Esto eliminara permanentemente al usuario '{nombre_usuario}'\n"
+                     f"y todas sus partidas registradas en el TOP X.\n"
+                     f"El programa se reiniciara automaticamente.",
+                font=("Arial", 10), fg="red", justify="center")
+            label_eliminar_info.pack(pady=10)
+            
+            def eliminar_historial_usuario():
+                #Confirmacion
+                respuesta = messagebox.askyesno(
+                    "Confirmar eliminacion",
+                    f"¿Esta seguro de eliminar al usuario '{nombre_usuario}' y todo su historial?\n\n"
+                    "Esta accion no se puede deshacer.",
+                    icon='warning'
+                )
+                if not respuesta:
+                    return
+                
+                #Segunda confirmacion
+                respuesta2 = messagebox.askyesno(
+                    "Ultima confirmacion",
+                    f"¿Realmente desea eliminar a '{nombre_usuario}'?\n\n"
+                    "Todas sus partidas en el TOP X seran eliminadas.",
+                    icon='warning'
+                )
+                if not respuesta2:
+                    return
+                
+                #Eliminar usuario de usuarios.json
+                correo_usuario = usuario_actual.get("correo", "")
+                if not eliminar_usuario_por_correo(correo_usuario):
+                    messagebox.showerror("Error", "No se pudo eliminar el usuario de la base de datos.")
+                    return
+                
+                #Eliminar partidas del usuario de los arboles ABB
+                if not eliminar_usuario_de_bitacora(nombre_usuario):
+                    messagebox.showinfo("Informacion", "El usuario no tenia partidas registradas en el TOP X.")
+                else:
+                    messagebox.showinfo("Exito", f"Se eliminaron todas las partidas de '{nombre_usuario}' del TOP X.")
+                
+                #Cerrar ventana de configuracion
+                ventana_configuracion.destroy()
+                ventana_principal.destroy()
+                
+                #Reiniciar el programa
+                messagebox.showinfo("Reiniciando", "El programa se reiniciara para aplicar los cambios.")
+                reiniciar_programa()
+            
+            boton_eliminar_historial = tk.Button(frame_eliminar, 
+                text="ELIMINAR HISTORIAL DE USUARIO", 
+                command=eliminar_historial_usuario,
+                width=30, height=2, bg="red", fg="white")
+            boton_eliminar_historial.pack(pady=10)
+    
+    #====================BOTONES GUARDAR/CANCELAR====================
     frame_botones = tk.Frame(frame_scrollable)
     frame_botones.pack(pady=20)
     
@@ -2404,7 +2541,6 @@ def crear_ventana_configuracion(ventana_principal):
 #S:None
 #Funcion:Crea la ventana principal del menu con el nombre del usuario autenticado
 def crear_ventana_principal(ventana_principal, usuario):
-    print("=== crear_ventana_principal: iniciando ===")
     ventana_principal.title("Sudoku")
     ventana_principal.geometry("400x350")
     ventana_principal.resizable(False, False)
@@ -2415,8 +2551,11 @@ def crear_ventana_principal(ventana_principal, usuario):
     label_correo = tk.Label(frame_usuario, text=f"Correo: {usuario['correo']}", font=("Arial", 12, "bold"), fg="purple")
     label_correo.pack()
     
+    nombre_mostrar = usuario.get("nombre", "Sin nombre")
+    label_nombre = tk.Label(frame_usuario, text=f"Usuario: {nombre_mostrar}", font=("Arial", 10), fg="blue")
+    label_nombre.pack()
+    
     def accion_boton_jugar():
-        print("=== Boton JUGAR presionado ===")
         directorio_script = obtener_directorio_script()
         archivo_config = os.path.join(directorio_script, "sudoku2026configuracion.json")
         with open(archivo_config, "r") as archivo:
@@ -2426,11 +2565,10 @@ def crear_ventana_principal(ventana_principal, usuario):
         if nivel_inicial == "multinivel":
             nivel_inicial = "facil"
         
-        print(f"nivel_inicial: {nivel_inicial}")
         crear_ventana_juego(ventana_principal, usuario, nivel_inicial)
     
     def accion_boton_configurar():
-        crear_ventana_configuracion(ventana_principal)
+        crear_ventana_configuracion(ventana_principal, usuario)
     
     def accion_boton_acerca_de():
         mostrar_acerca_de()
@@ -2455,8 +2593,28 @@ def crear_ventana_principal(ventana_principal, usuario):
     
     boton_salir = tk.Button(ventana_principal, text="SALIR", command=accion_boton_salir, width=20, height=2)
     boton_salir.pack(pady=5)
+
+#====================FUNCION PARA REINICIAR EL PROGRAMA====================
+
+#E:ninguna
+#S:None
+#Funcion:Reinicia el programa cerrando la instancia actual y ejecutando una nueva
+def reiniciar_programa():
+    #Obtener la ruta del script actual
+    script_path = os.path.abspath(__file__)
     
-    print("=== crear_ventana_principal: ventana creada ===")
+    #Cerrar todas las ventanas de Tkinter
+    try:
+        #Salir del mainloop
+        sys.stdout.flush()
+        #Usar subprocess para ejecutar el script nuevamente
+        subprocess.Popen([sys.executable, script_path])
+        #Salir del proceso actual
+        sys.exit(0)
+    except Exception as e:
+        print(f"Error al reiniciar: {e}")
+        #Si falla, al menos intentar cerrar
+        sys.exit(0)
 
 #====================MAIN====================
 
@@ -2464,7 +2622,6 @@ def crear_ventana_principal(ventana_principal, usuario):
 #S:None
 #Funcion:Inicia la aplicacion
 def main():
-    print("=== MAIN: iniciando aplicacion ===")
     resetear_configuracion_a_default()
     vaciar_historial_partidas()
     
@@ -2473,7 +2630,6 @@ def main():
     
     mostrar_login(ventana_principal)
     
-    print("=== MAIN: iniciando loop principal ===")
     tk.mainloop()
 
 if __name__ == "__main__":
