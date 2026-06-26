@@ -1,2 +1,0 @@
-"pruebota"
-"Hola parcero"
