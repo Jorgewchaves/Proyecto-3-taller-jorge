@@ -2,7 +2,18 @@
     "nivel": "multinivel",
     "reloj": "timer",
     "top_x": 0,
-    "elementos": "numeros",
+    "elementos": "personalizados",
+    "elementos_personalizados": [
+        "a",
+        "b",
+        "c",
+        "d",
+        "e",
+        "f",
+        "g",
+        "h",
+        "i"
+    ],
     "tiempos_multinivel": {
         "facil": {
             "horas": 0,

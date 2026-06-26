@@ -61,5 +61,68 @@
         "codigo_ingreso": "626860d7d964c43d13506e94fff5fbf6946eaacf346a89f05e1c6d943a0401af",
         "nombre": "",
         "fecha_creacion": "2026-06-25T01:31:00.027818"
+    },
+    {
+        "id": 10,
+        "correo": "yo@gmail.com",
+        "codigo_ingreso": "b2cd7d2226dfc5a75653c45f58f2417a3695eab71c59b966e679a8e145f8f806",
+        "nombre": "",
+        "fecha_creacion": "2026-06-25T14:10:12.658513"
+    },
+    {
+        "id": 11,
+        "correo": "yojaja@gmail.com",
+        "codigo_ingreso": "05e344b69a58822b68f22ca9562a908ffe93480cc99b14afddcf6bd3e4c60205",
+        "nombre": "",
+        "fecha_creacion": "2026-06-25T14:14:14.965624"
+    },
+    {
+        "id": 12,
+        "correo": "alex@gmail.com",
+        "codigo_ingreso": "d578f5f03c1df7449aae86eb2b6604f3626c8e4c110a53247fd296424278725e",
+        "nombre": "",
+        "fecha_creacion": "2026-06-25T14:39:58.349770"
+    },
+    {
+        "id": 13,
+        "correo": "gavi@gmail.com",
+        "codigo_ingreso": "7d841aff084762867add443205159eb8cb59ebe779ef94dcf59dd37083b23e9a",
+        "nombre": "",
+        "fecha_creacion": "2026-06-25T16:50:42.475404"
+    },
+    {
+        "id": 14,
+        "correo": "farid@gmail.com",
+        "codigo_ingreso": "5ec3b4cbea4eb07384abcb1019bc9b2e0a8cfa0bbb169268a7fb1c09991b11bc",
+        "nombre": "",
+        "fecha_creacion": "2026-06-25T16:58:07.105331"
+    },
+    {
+        "id": 15,
+        "correo": "gonzalo@gmail.com",
+        "codigo_ingreso": "5769bd72be660bf7583e777b003bff0e3d4bd514aa732630b7483bc09ac71d4c",
+        "nombre": "",
+        "fecha_creacion": "2026-06-25T17:04:48.609103"
+    },
+    {
+        "id": 16,
+        "correo": "fabio@gmail.com",
+        "codigo_ingreso": "abb9a5a0c709b71b6573737fac7361f0eafa354f2517c1fff03cea7cefaf6048",
+        "nombre": "",
+        "fecha_creacion": "2026-06-25T17:10:43.369256"
+    },
+    {
+        "id": 17,
+        "correo": "odin@gmail.com",
+        "codigo_ingreso": "eaa88a4f80d3f04f4c286ce3641bffecce2aa006477b6eb96db910cee18d01ed",
+        "nombre": "",
+        "fecha_creacion": "2026-06-25T17:16:56.604482"
+    },
+    {
+        "id": 18,
+        "correo": "odi@gmail.com",
+        "codigo_ingreso": "252fdc37cda89cb6266813070c6c48218bd9f1024aca4aca020db4e8773a3938",
+        "nombre": "odindindindindun",
+        "fecha_creacion": "2026-06-25T17:17:12.670988"
     }
 ]
