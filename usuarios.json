@@ -138,5 +138,26 @@
         "codigo_ingreso": "3e66af74a916f231c36ee905f9c1a2d980d164e586d0a4ebd0061cf3a9536d91",
         "nombre": "luar",
         "fecha_creacion": "2026-06-26T21:39:32.757277"
+    },
+    {
+        "id": 23,
+        "correo": "yopis@gmail.com",
+        "codigo_ingreso": "2a4aa96ee26a5725284efb0a7df897a1caf0a9335d1a2c3abe87b90fdbe60268",
+        "nombre": "yojajajjaa",
+        "fecha_creacion": "2026-06-26T22:40:41.415201"
+    },
+    {
+        "id": 24,
+        "correo": "pedro@gmail.com",
+        "codigo_ingreso": "1cf04a44443e79e4e3c8a7f2d99a1bb5250636a7b28a4301ee112fa354b925dd",
+        "nombre": "",
+        "fecha_creacion": "2026-06-27T02:44:22.227926"
+    },
+    {
+        "id": 25,
+        "correo": "luis@gmail.com",
+        "codigo_ingreso": "4f22d293ba0e38bb4f211f33386ff0c2e9875310c9e96d852857cd97120eb365",
+        "nombre": "heyaa",
+        "fecha_creacion": "2026-06-27T02:45:00.142960"
     }
 ]

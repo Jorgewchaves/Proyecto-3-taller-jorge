@@ -1013,7 +1013,7 @@ def mostrar_acerca_de():
     version = tk.Label(frame_principal, text="Version: 4.0", font=("Arial", 10))
     version.pack()
     
-    fecha = tk.Label(frame_principal, text="Fecha de creacion: 17 de mayo", font=("Arial", 10))
+    fecha = tk.Label(frame_principal, text="Fecha de creacion: 22 de junio", font=("Arial", 10))
     fecha.pack()
     
     autor = tk.Label(frame_principal, text="Autor: Jorge William Chaves Osorio", font=("Arial", 10))
