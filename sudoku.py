@@ -272,7 +272,7 @@ def resetear_configuracion_a_default():
     
     return configuracion_default
 
-#====================FUNCIONES DE USUARIOS (CORREGIDAS)====================
+#====================FUNCIONES DE USUARIOS====================
 
 #E:ninguna
 #S:list - Lista de usuarios del archivo usuarios.json
@@ -287,7 +287,6 @@ def cargar_usuarios():
         return []
     
     try:
-        #Intentar leer con utf-8-sig para manejar BOM
         with open(archivo, "r", encoding='utf-8-sig') as f:
             contenido = f.read().strip()
             if not contenido:
@@ -297,18 +296,15 @@ def cargar_usuarios():
             return json.loads(contenido)
     except json.JSONDecodeError as e:
         print(f"Error JSON en usuarios.json: {e}")
-        #Intentar reparar
         try:
             with open(archivo, "r", encoding='utf-8') as f:
                 contenido = f.read()
-                #Intentar limpiar caracteres especiales
                 import re
                 contenido = re.sub(r'[\x00-\x1f\x7f-\x9f]', '', contenido)
                 if contenido.strip():
                     return json.loads(contenido)
         except:
             pass
-        #Si falla, reiniciar el archivo
         with open(archivo, "w", encoding='utf-8') as f:
             json.dump([], f, indent=4)
         return []
@@ -452,7 +448,6 @@ def eliminar_usuario_de_bitacora(nombre):
         eliminados_intermedio = abb_intermedio.eliminar_usuario(nombre)
         eliminados_dificil = abb_dificil.eliminar_usuario(nombre)
         
-        #Guardar los arboles actualizados
         guardar_arboles_bitacora(abb_facil, abb_intermedio, abb_dificil)
         
         return eliminados_facil or eliminados_intermedio or eliminados_dificil
@@ -460,7 +455,7 @@ def eliminar_usuario_de_bitacora(nombre):
         print(f"Error al eliminar usuario de bitacora: {e}")
         return False
 
-#====================FUNCIONES DE GENERACION DE SUDOKU====================
+#====================FUNCIONES DE GENERACION DE SUDOKU CON SOLUCION UNICA====================
 
 #E:ninguna
 #S:list - Tablero 9x9 con Sudoku resuelto
@@ -501,36 +496,120 @@ def generar_sudoku_valido():
     resolver(tablero)
     return tablero
 
-#E:list tablero - Tablero de Sudoku resuelto
-#E:str dificultad - Nivel de dificultad ("facil","intermedio","dificil")
-#S:list - Tablero con celdas eliminadas según la dificultad
-#Funcion:Elimina celdas del tablero segun la dificultad (15,20,25 celdas respectivamente)
-def eliminar_celdas(tablero, dificultad):
+#E:list tablero - Tablero de Sudoku para contar soluciones
+#S:int - Numero de soluciones (maximo 2 para eficiencia)
+#Funcion:Cuenta cuantas soluciones tiene un tablero, limitando a 2
+def contar_soluciones(tablero):
+    soluciones = [0]
+    
+    def es_valido(tablero, fila, columna, numero):
+        for c in range(9):
+            if tablero[fila][c] == numero:
+                return False
+        for r in range(9):
+            if tablero[r][columna] == numero:
+                return False
+        caja_fila = (fila // 3) * 3
+        caja_columna = (columna // 3) * 3
+        for r in range(caja_fila, caja_fila + 3):
+            for c in range(caja_columna, caja_columna + 3):
+                if tablero[r][c] == numero:
+                    return False
+        return True
+    
+    def resolver_contar(tablero):
+        if soluciones[0] >= 2:
+            return True
+        for fila in range(9):
+            for columna in range(9):
+                if tablero[fila][columna] == 0:
+                    for numero in range(1, 10):
+                        if es_valido(tablero, fila, columna, numero):
+                            tablero[fila][columna] = numero
+                            if resolver_contar(tablero):
+                                return True
+                            tablero[fila][columna] = 0
+                    return False
+        soluciones[0] += 1
+        return False
+    
     copia = [fila[:] for fila in tablero]
-    
-    eliminaciones = {
-        "facil": 15,
-        "intermedio": 20,
-        "dificil": 25
-    }
-    
-    cantidad = eliminaciones.get(dificultad, 15)
+    resolver_contar(copia)
+    return soluciones[0]
+
+#E:list tablero - Tablero de Sudoku resuelto
+#E:int cantidad - Numero de celdas a eliminar
+#S:list - Tablero con celdas eliminadas y solucion unica
+#Funcion:Elimina celdas del tablero asegurando que solo tenga una solucion
+def eliminar_celdas_con_solucion_unica(tablero, cantidad):
+    copia = [fila[:] for fila in tablero]
     
     posiciones = [(f, c) for f in range(9) for c in range(9)]
     random.shuffle(posiciones)
     
-    for i in range(cantidad):
-        fila, columna = posiciones[i]
+    celdas_eliminadas = 0
+    posiciones_idx = 0
+    intentos_fallidos = 0
+    max_intentos = 300
+    
+    while celdas_eliminadas < cantidad and posiciones_idx < len(posiciones) and intentos_fallidos < max_intentos:
+        fila, columna = posiciones[posiciones_idx]
+        posiciones_idx += 1
+        
+        if copia[fila][columna] == 0:
+            continue
+        
+        valor_guardado = copia[fila][columna]
         copia[fila][columna] = 0
+        
+        soluciones = contar_soluciones(copia)
+        
+        if soluciones == 1:
+            celdas_eliminadas += 1
+            intentos_fallidos = 0
+        else:
+            copia[fila][columna] = valor_guardado
+            intentos_fallidos += 1
+        
+        if intentos_fallidos > 50 and celdas_eliminadas < cantidad:
+            posiciones_restantes = [(f, c) for f in range(9) for c in range(9) if copia[f][c] != 0]
+            random.shuffle(posiciones_restantes)
+            posiciones = posiciones + posiciones_restantes
+            intentos_fallidos = 0
+    
+    if celdas_eliminadas < cantidad:
+        for fila in range(9):
+            for columna in range(9):
+                if celdas_eliminadas >= cantidad:
+                    break
+                if copia[fila][columna] != 0:
+                    valor_guardado = copia[fila][columna]
+                    copia[fila][columna] = 0
+                    soluciones = contar_soluciones(copia)
+                    if soluciones == 1:
+                        celdas_eliminadas += 1
+                    else:
+                        copia[fila][columna] = valor_guardado
+            if celdas_eliminadas >= cantidad:
+                break
     
     return copia
 
 #E:str dificultad - Nivel de dificultad ("facil","intermedio","dificil")
 #S:tuple - (tablero_juego, tablero_solucion) ambos como listas 9x9
-#Funcion:Genera una partida de Sudoku completa con el nivel de dificultad especificado
+#Funcion:Genera una partida de Sudoku con solucion unica
 def generar_partida_sudoku(dificultad):
     tablero_resuelto = generar_sudoku_valido()
-    tablero_juego = eliminar_celdas(tablero_resuelto, dificultad)
+    
+    eliminaciones = {
+        "facil": 25,
+        "intermedio": 30,
+        "dificil": 35
+    }
+    cantidad = eliminaciones.get(dificultad, 15)
+    
+    tablero_juego = eliminar_celdas_con_solucion_unica(tablero_resuelto, cantidad)
+    
     return tablero_juego, tablero_resuelto
 
 #E:list tablero - Tablero 9x9 de Sudoku
@@ -598,8 +677,8 @@ def agregar_partida_historial(historial, nivel, partida):
         guardar_historial_partidas(historial)
 
 #E:str nivel - Nivel de dificultad
-#S:tuple - (tablero_juego, tablero_solucion) partida única no repetida
-#Funcion:Genera una partida única que no esté en el historial, con máximo 100 intentos
+#S:tuple - (tablero_juego, tablero_solucion) partida única no repetida con solucion unica
+#Funcion:Genera una partida única que no esté en el historial
 def generar_partida_unica(nivel):
     historial = cargar_historial_partidas()
     intentos = 0
@@ -616,7 +695,6 @@ def generar_partida_unica(nivel):
         
         intentos += 1
     
-    #Si no se encuentra una única, permitir repetición
     tablero_juego, tablero_solucion = generar_partida_sudoku(nivel)
     return tablero_juego, tablero_solucion
 
@@ -631,15 +709,12 @@ def validar_elementos_personalizados(elementos):
     if len(elementos) != 9:
         return False, "Debe ingresar exactamente 9 elementos"
     
-    #Lista de numeros romanos validos de 1 a 9
     numeros_romanos_validos = ["I", "II", "III", "IV", "V", "VI", "VII", "VIII", "IX"]
     
     for i, elem in enumerate(elementos):
-        #Verificar si es un numero romano valido
         if elem in numeros_romanos_validos:
             continue
         
-        #Si no es numero romano, aplicar las restricciones normales
         if len(elem) != 1:
             return False, f"El elemento {i+1} debe ser un solo caracter (a menos que sea un numero romano valido)"
         if elem.isspace():
@@ -651,13 +726,12 @@ def validar_elementos_personalizados(elementos):
         if elem.isupper():
             return False, f"El elemento {i+1} no puede ser una letra mayuscula (excepto numeros romanos)"
     
-    #Verificar que no haya duplicados
     if len(set(elementos)) != 9:
         return False, "Los elementos no pueden repetirse entre si"
     
     return True, "Elementos validos"
 
-#====================FUNCIONES DE BITACORA Y TOP X (NUEVA VERSION)====================
+#====================FUNCIONES DE BITACORA Y TOP X====================
 
 #E:str nombre_jugador - Nombre del jugador
 #E:str dificultad - Nivel de dificultad
@@ -669,13 +743,10 @@ def guardar_partida_en_bitacora(nombre_jugador, dificultad, segundos, fecha_hora
     directorio_script = obtener_directorio_script()
     nombre_archivo = os.path.join(directorio_script, "sudoku2026_bitacora_jugadas.pkl")
     
-    #Cargar arboles existentes o crear nuevos
     abb_facil, abb_intermedio, abb_dificil = cargar_arboles_bitacora()
     
-    #Crear objeto Partida
     partida = Partida(nombre_jugador, dificultad, segundos, fecha_hora)
     
-    #Insertar en el arbol correspondiente segun dificultad
     if dificultad == "facil":
         abb_facil.insertar_nodo(partida)
     elif dificultad == "intermedio":
@@ -685,7 +756,6 @@ def guardar_partida_en_bitacora(nombre_jugador, dificultad, segundos, fecha_hora
     else:
         return
     
-    #Guardar los tres arboles en el archivo binario
     guardar_arboles_bitacora(abb_facil, abb_intermedio, abb_dificil)
 
 #E:ninguna
@@ -882,10 +952,8 @@ def generar_top_x():
         if partidas:
             elementos.append(Paragraph(nombres_nivel[nivel], nivel_style))
             
-            #Tabla con 4 columnas para mejor visualizacion
             tabla_datos = [["#", "JUGADOR", "TIEMPO", "FECHA"]]
             for i, partida_str in enumerate(partidas, 1):
-                #Separar la cadena "Jugador - Tiempo - Fecha"
                 partes = partida_str.split(" - ")
                 if len(partes) == 3:
                     jugador = partes[0]
@@ -897,7 +965,6 @@ def generar_top_x():
                     fecha = ""
                 tabla_datos.append([str(i), jugador, tiempo, fecha])
             
-            #Anchos de columna ajustados para que los nombres se vean bien
             tabla = Table(tabla_datos, colWidths=[0.5*inch, 2.5*inch, 1.2*inch, 2.0*inch])
             tabla.setStyle(TableStyle([
                 ('BACKGROUND', (0, 0), (-1, 0), colors.grey),
@@ -1138,19 +1205,16 @@ def crear_ventana_juego(ventana_principal, usuario, nivel_inicial="facil"):
         
         #Si el usuario no tiene nombre, mostrar ventana para ingresarlo y SALIR
         if not nombre_jugador or nombre_jugador == "":
-            #CREAR UNA VENTANA NUEVA INDEPENDIENTE (Tk) PARA EL NOMBRE
             ventana_nombre = tk.Tk()
             ventana_nombre.title("Nombre de usuario")
             ventana_nombre.geometry("400x200")
             ventana_nombre.resizable(False, False)
             
-            #Centrar la ventana
             ventana_nombre.update_idletasks()
             x = (ventana_nombre.winfo_screenwidth() // 2) - (400 // 2)
             y = (ventana_nombre.winfo_screenheight() // 2) - (200 // 2)
             ventana_nombre.geometry(f"+{x}+{y}")
             
-            #Forzar que aparezca encima
             ventana_nombre.lift()
             ventana_nombre.focus_force()
             
@@ -1189,7 +1253,6 @@ def crear_ventana_juego(ventana_principal, usuario, nivel_inicial="facil"):
             entrada_nombre.bind("<Return>", lambda e: guardar_nombre())
             entrada_nombre.focus()
             
-            #Iniciar el loop de la ventana de nombre
             ventana_nombre.mainloop()
             return
         
@@ -1379,8 +1442,7 @@ def crear_ventana_juego(ventana_principal, usuario, nivel_inicial="facil"):
             nonlocal tiempo_inicial_segundos, tiempo_transcurrido, tiempo_restante, tipo_reloj
             nonlocal timer_se_convirtio_a_cronometro, tiempo_acumulado_al_convertir
             nonlocal matriz_valores_actuales, matriz_fijos
-            nonlocal pila_jugadas_realizadas, pila_jugadas_eliminadas
-            
+            nonlocal pila_jugadas_realizadas, pila_jugadas_eliminadas            
             if not juego_iniciado:
                 mostrar_error_general_simple("NO SE HA INICIADO EL JUEGO")
                 return
@@ -2639,20 +2701,14 @@ def crear_ventana_principal(ventana_principal, usuario):
 #S:None
 #Funcion:Reinicia el programa cerrando la instancia actual y ejecutando una nueva
 def reiniciar_programa():
-    #Obtener la ruta del script actual
     script_path = os.path.abspath(__file__)
     
-    #Cerrar todas las ventanas de Tkinter
     try:
-        #Salir del mainloop
         sys.stdout.flush()
-        #Usar subprocess para ejecutar el script nuevamente
         subprocess.Popen([sys.executable, script_path])
-        #Salir del proceso actual
         sys.exit(0)
     except Exception as e:
         print(f"Error al reiniciar: {e}")
-        #Si falla, al menos intentar cerrar
         sys.exit(0)
 
 #====================MAIN====================

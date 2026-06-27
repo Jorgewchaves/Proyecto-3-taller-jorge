@@ -131,5 +131,12 @@
         "codigo_ingreso": "6df5d78fd5104627ab92c4fbfc45ac07aebe9dbfe6caf9ce4171058d06a248be",
         "nombre": "tralala",
         "fecha_creacion": "2026-06-25T21:25:34.832842"
+    },
+    {
+        "id": 22,
+        "correo": "luar@gmail.com",
+        "codigo_ingreso": "3e66af74a916f231c36ee905f9c1a2d980d164e586d0a4ebd0061cf3a9536d91",
+        "nombre": "luar",
+        "fecha_creacion": "2026-06-26T21:39:32.757277"
     }
 ]

@@ -1,23 +1,6 @@
 {
-    "nivel": "facil",
+    "nivel": "dificil",
     "reloj": "cronometro",
-    "top_x": 0,
-    "elementos": "numeros",
-    "tiempos_multinivel": {
-        "facil": {
-            "horas": 0,
-            "minutos": 0,
-            "segundos": 0
-        },
-        "intermedio": {
-            "horas": 0,
-            "minutos": 0,
-            "segundos": 0
-        },
-        "dificil": {
-            "horas": 0,
-            "minutos": 0,
-            "segundos": 0
-        }
-    }
+    "top_x": 1,
+    "elementos": "numeros"
 }
